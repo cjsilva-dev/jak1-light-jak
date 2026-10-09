@@ -2080,11 +2080,15 @@
 (define *dark-wings-flap?* #f) ;; set by each L1 tap, consumed by the wings process
 
 (defbehavior dark-flight-beat target ()
-  "One wing beat: set the climb and play the flap."
+  "One wing beat: set the climb and play the flap. A flap out of a glide is a launch: the flap pose
+   with the nose lifted for a moment (as in Jak 3). A plain flap isn't, so a glide started right after
+   one goes straight into the glide pose (the launch window on every flap made that transition rough)."
   (set! *dark-wings-flap?* #t)
   (df-sfx 'flap)
   (set! *df-pose-cur* *df-pose-kick*)
-  (set! *df-launch-until* (+ (current-time) *fc-launch-time*))
+  (if *fc-flap-from-glide?*
+      (set! *df-launch-until* (+ (current-time) *fc-launch-time*))
+      )
   (fc-dark-flap-lift)
   (none)
   )
