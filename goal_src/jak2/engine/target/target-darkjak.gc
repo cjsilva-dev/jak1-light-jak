@@ -125,9 +125,11 @@
   (logior! (-> *game-info* purchase-secrets) (game-secrets dark-angel-wings))
   ;; Fly as long as you like: the game's own Unlimited Dark Jak secret comes bought and switched ON
   ;; in any save that never had it (new games included); after that it's the player's to switch off
-  ;; in the Secrets menu, and the save remembers. With it off, Dark mode costs what it costs in the
-  ;; original game (a full meter to transform, 20 seconds of Dark Jak), except that flying is free:
-  ;; the timer pauses while the wings are out (dark-flight-wings-out!) and resumes on landing.
+  ;; in the Secrets menu, and the save remembers. The game's own secret only refills the meter, so
+  ;; the mod also skips the 20-second timeout while it is on (see target-darkjak-process). With it
+  ;; off, Dark mode costs what it costs in the original game (a full meter to transform, 20 seconds
+  ;; of Dark Jak), except that flying is free: the timer pauses while the wings are out
+  ;; (dark-flight-wings-out!) and resumes on landing.
   (when (not (logtest? (-> *game-info* purchase-secrets) (game-secrets endless-dark)))
     (logior! (-> *game-info* purchase-secrets) (game-secrets endless-dark))
     (logior! (-> *game-info* secrets) (game-secrets endless-dark))
@@ -190,7 +192,11 @@
                     )
                   (not (-> *setting-control* user-current darkjak))
                   )
-              (not *dark-wings-out?*) ;; DARK FLIGHT: flying costs no dark eco: the timer pauses in flight (dark-flight-wings-out!)
+              ;; DARK FLIGHT: with Unlimited Dark Jak on he never times out (the game's own secret only
+              ;; refills the meter, powerups.gc); with it off, the timer runs on the ground and pauses in
+              ;; flight (dark-flight-wings-out!): flying costs nothing, everything else costs what it did.
+              (not (logtest? (-> self game secrets) (game-secrets endless-dark)))
+              (not *dark-wings-out?*)
               (not (focus-test? self dead dangerous hit grabbed))
               (not (and (-> self next-state) (= (-> self next-state name) 'target-darkjak-get-off)))
               (not (logtest? (-> self darkjak stage) (darkjak-stage force-on)))
