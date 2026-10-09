@@ -40,9 +40,8 @@ Both are in the *Secrets* menu, and each save keeps its own choice:
   with its sounds). Free, and always in the menu. Both styles crackle with Dark Jak's lightning, as his
   wings do in True Flight.
 - **Unlimited Dark Jak** — the game's own item (endless dark eco). The mod unlocks it and switches it **on**
-  in any save that doesn't have it yet; switch it off there if you'd rather collect dark eco. Each
-  transformation then costs a full meter and runs out on the ground as in the original game, but
-  Dark Jak's timer pauses while he flies, so a flight is never cut short.
+  in any save that doesn't have it yet; switch it off there if you'd rather collect dark eco (each
+  transformation then costs a full meter, as in the original game — the flight itself stays unlimited).
 
 ### What the mod writes into your save
 
