@@ -125,8 +125,9 @@
   (logior! (-> *game-info* purchase-secrets) (game-secrets dark-angel-wings))
   ;; Fly as long as you like: the game's own Unlimited Dark Jak secret comes bought and switched ON
   ;; in any save that never had it (new games included); after that it's the player's to switch off
-  ;; in the Secrets menu, and the save remembers. (Dark Jak never times out either way, see the
-  ;; timeout check in target-darkjak-process; with it off each transformation costs a full meter.)
+  ;; in the Secrets menu, and the save remembers. With it off, Dark mode costs what it costs in the
+  ;; original game (a full meter to transform, 20 seconds of Dark Jak), except that flying is free:
+  ;; the timer pauses while the wings are out (dark-flight-wings-out!) and resumes on landing.
   (when (not (logtest? (-> *game-info* purchase-secrets) (game-secrets endless-dark)))
     (logior! (-> *game-info* purchase-secrets) (game-secrets endless-dark))
     (logior! (-> *game-info* secrets) (game-secrets endless-dark))
@@ -189,7 +190,7 @@
                     )
                   (not (-> *setting-control* user-current darkjak))
                   )
-              #f ;; DARK FLIGHT: Dark Jak never times out (fly as long as you like; the meter still pays for each transformation)
+              (not *dark-wings-out?*) ;; DARK FLIGHT: flying costs no dark eco: the timer pauses in flight (dark-flight-wings-out!)
               (not (focus-test? self dead dangerous hit grabbed))
               (not (and (-> self next-state) (= (-> self next-state name) 'target-darkjak-get-off)))
               (not (logtest? (-> self darkjak stage) (darkjak-stage force-on)))
@@ -2200,20 +2201,32 @@
   (none)
   )
 
+(define *df-dark-time-left* (the-as time-frame 0)) ;; of Dark Jak's timer, while the wings are out
+
 (defbehavior dark-flight-wings-out! target ()
-  "The wings come out (once per flight): his flying lean hooks onto his main bone (a bone keeps a
-   hook until the hook takes itself off). Jak's bones are new after every respawn, so the hook goes
-   on here, not at load."
+  "The wings come out (once per flight): Dark Jak's timer pauses (flying is free; with Unlimited
+   Dark Jak off, the time he has left waits for him on the ground) and his flying lean hooks onto
+   his main bone (a bone keeps a hook until the hook takes itself off). Jak's bones are new after
+   every respawn, so the hook goes on here, not at load."
   (when (not *dark-wings-out?*)
     (set! *dark-wings-out?* #t)
+    (let ((f (the-as fact-info-target (-> self fact))))
+      (set! *df-dark-time-left* (- (-> f darkjak-effect-time) (- (current-time) (-> f darkjak-start-time))))
+      )
     (set! (-> self node-list data 3 param0) dark-flight-main-joint)
     )
   (none)
   )
 
 (defbehavior dark-flight-wings-in! target ()
-  "The wings go away: the lean eases back and the hook takes itself off."
-  (set! *dark-wings-out?* #f)
+  "The wings go away: Dark Jak's timer resumes where it paused; the lean eases back and the hook
+   takes itself off."
+  (when *dark-wings-out?*
+    (set! *dark-wings-out?* #f)
+    (let ((f (the-as fact-info-target (-> self fact))))
+      (set! (-> f darkjak-start-time) (- (current-time) (- (-> f darkjak-effect-time) *df-dark-time-left*)))
+      )
+    )
   (none)
   )
 
