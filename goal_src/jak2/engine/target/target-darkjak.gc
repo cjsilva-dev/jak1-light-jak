@@ -2867,6 +2867,29 @@
           )
   )
 
+;; The crackle's bolts: the game's Dark Jak transformation lightning (spec 6), minus its sound: that
+;; spec plays "transform-zap" on every bolt, and the crackle fires several bolts a second. The dash's
+;; bolts (df-dash-bolt) keep the sound, as in 0.3.0.
+(define *df-crackle-spec* (new 'static 'lightning-spec
+                            :name "lightning-dark-wings-crackle"
+                            :flags (lightning-spec-flags lsf0)
+                            :start-color (new 'static 'rgba :r #xff :g #xff :b #xff :a #x80)
+                            :end-color (new 'static 'rgba :r #xff :g #xff :b #xff :a #x80)
+                            :fade-to-color (new 'static 'rgba :r #xbf :b #x8f :a #x5)
+                            :fade-start-factor 0.2
+                            :texture (new 'static 'texture-id :index #x84 :page #xc)
+                            :reduction 0.42
+                            :num-points 16
+                            :box-size 8192.0
+                            :merge-factor 0.5
+                            :merge-count 2
+                            :radius 1638.4
+                            :duration 30.0
+                            :duration-rand 90.0
+                            :sound #f
+                            )
+  )
+
 (defbehavior dw-wing-arc dark-wings ()
   "Dark Jak's crackle across his wings (fc-wing-arc, flight-core.gc): a bolt between two wing bones on
    the same side (Metal Kor's lfr/lback/rfr/rbackwing chains, or the pegasus's Lwing/Rwing chains)."
@@ -2895,7 +2918,7 @@
             )
           )
         (if (>= j2 0)
-            (fc-wing-arc (-> *lightning-spec-id-table* 6) j1 j2) ;; Jak II's Dark Jak body crackle
+            (fc-wing-arc *df-crackle-spec* j1 j2) ;; Jak II's Dark Jak body crackle, minus its sound
             )
         )
       )
