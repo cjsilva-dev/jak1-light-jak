@@ -186,17 +186,20 @@
        )
      (target-danger-set! (-> self control danger-mode) #f)
      (update-transforms (-> self control))
-     (if (and (or (time-elapsed?
-                    (-> (the-as fact-info-target (-> self fact)) darkjak-start-time)
-                    (-> (the-as fact-info-target (-> self fact)) darkjak-effect-time)
-                    )
+     (if (and (or ;; DARK FLIGHT: the 20 s timer only counts with Unlimited Dark Jak off (the game's own
+                  ;; secret only refills the meter, powerups.gc) and the wings in: it runs on the ground and
+                  ;; pauses in flight (dark-flight-wings-out!), so flying costs nothing and everything else
+                  ;; costs what it did. The game's own "Dark Jak off" setting (the gun course, Onin's game,
+                  ;; Ashelin's course) still ends him whatever the secret or the wings say.
+                  (and (time-elapsed?
+                         (-> (the-as fact-info-target (-> self fact)) darkjak-start-time)
+                         (-> (the-as fact-info-target (-> self fact)) darkjak-effect-time)
+                         )
+                       (not (logtest? (-> self game secrets) (game-secrets endless-dark)))
+                       (not *dark-wings-out?*)
+                       )
                   (not (-> *setting-control* user-current darkjak))
                   )
-              ;; DARK FLIGHT: with Unlimited Dark Jak on he never times out (the game's own secret only
-              ;; refills the meter, powerups.gc); with it off, the timer runs on the ground and pauses in
-              ;; flight (dark-flight-wings-out!): flying costs nothing, everything else costs what it did.
-              (not (logtest? (-> self game secrets) (game-secrets endless-dark)))
-              (not *dark-wings-out?*)
               (not (focus-test? self dead dangerous hit grabbed))
               (not (and (-> self next-state) (= (-> self next-state name) 'target-darkjak-get-off)))
               (not (logtest? (-> self darkjak stage) (darkjak-stage force-on)))
@@ -2224,6 +2227,7 @@
       (set! *df-dark-time-left* (- (-> f darkjak-effect-time) (- (current-time) (-> f darkjak-start-time))))
       )
     (set! (-> self node-list data 3 param0) dark-flight-main-joint)
+    (set! *fc-cam?* #t) ;; the camera tracks him as on the ground while the wings are out (cam-master.gc)
     )
   (none)
   )
@@ -2236,6 +2240,7 @@
     (let ((f (the-as fact-info-target (-> self fact))))
       (set! (-> f darkjak-start-time) (- (current-time) (- (-> f darkjak-effect-time) *df-dark-time-left*)))
       )
+    (set! *fc-cam?* #f)
     )
   (none)
   )
@@ -2248,7 +2253,6 @@
   (set! (-> self control dynam gravity-max) (-> self control standard-dynamics gravity-max))
   (dark-wings-show #f)
   (dark-flight-camera #f)
-  (set! *fc-cam?* #f)
   (none)
   )
 
@@ -2422,7 +2426,6 @@
       (the-as process #f)
       )
     (set! (-> self control bomb-scale) 0.0)
-    (set! *fc-cam?* #f)
     (dark-flight-wings-in!)
     (dark-wings-show #f)
     (dark-flight-camera #f)
@@ -2432,7 +2435,6 @@
     ;; the engine clamps falls to gravity-max (40 m/s); lift it or the plunge stays floaty
     (set! (-> self control dynam gravity-max) (+ (meters 10) *fc-slam-boost-max*))
     (vector-copy! (-> self control last-trans-any-surf) (-> self control trans)) ;; never fall damage
-    (set! *fc-cam?* #t)
     ;; the plunge is still flight: streaming, the game's current level and the abyss net keep running
     (fs-tick)
     )
@@ -2726,7 +2728,6 @@
         (set! (-> self control mod-surface) (fc-dark-fly-surface)) ;; R1 turbo only right after a flap
         (dark-wings-show #t)
         (dark-flight-camera #t)
-        (set! *fc-cam?* #t)
         (dark-flight-city)
         (dark-flight-dash) ;; R1 tap
         ;; flapping turbo: accelerate along Jak's facing, like the glide turbo
@@ -2745,14 +2746,12 @@
        (else
          (set! (-> self control dynam gravity-length) (-> self control standard-dynamics gravity-length))
          (set! (-> self control dynam gravity-max) (-> self control standard-dynamics gravity-max))
-         (set! *fc-cam?* #f)
          )
        )
      )
     (else
       ;; on the ground (or no longer Dark Jak): fold the wings away
       (dark-flight-wings-in!)
-      (set! *fc-cam?* #f)
       (dark-flight-glide-end)
       (set! (-> self control dynam gravity-length) (-> self control standard-dynamics gravity-length))
       (set! (-> self control dynam gravity-max) (-> self control standard-dynamics gravity-max))

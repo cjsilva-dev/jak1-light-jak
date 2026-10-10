@@ -44,12 +44,14 @@ Both are in the *Secrets* menu, and each save keeps its own choice:
   game's costs: a full meter to transform and 20 seconds of Dark Jak, except that **flying is free**.
   His timer pauses while the wings are out and picks up where it left off when he lands, so
   everything else you do as Dark Jak costs what it always did, and a flight never costs anything.
+  (One small thing: dark eco picked up while the wings are out doesn't add to the paused timer.)
 
 ### What the mod writes into your save
 
 Secrets are saved with your game, so these stay in the save file (the original game ignores them if
 you load the save without the mod). They are written in the one place the game itself decides what
-Jak has, when a game starts, a save loads or Jak respawns; nothing is written while you play:
+Jak has, whenever it rebuilds Jak's abilities (a new game, a loaded save, a respawn, a level change);
+nothing is written while you play:
 
 - **Unlimited Dark Jak** is marked bought and switched on the first time a save runs with the mod.
   Switch it off in the Secrets menu if you prefer; the mod won't switch it back on.
@@ -63,8 +65,8 @@ At the top of `goal_src/jak2/engine/target/target-darkjak.gc` (off by default):
   (so the force fields between districts open for a flying Jak)
 - `*df-opt-unlock-extras?*` — every Secrets-menu item and OpenGOAL PC cheat unlocked
 
-Both are applied with the rest of the mod's save defaults (`df-game-defaults`), once per new game, load
-or respawn.
+Both are applied with the rest of the mod's save defaults (`df-game-defaults`), whenever the game rebuilds
+Jak's abilities (a new game, a loaded save, a respawn, a level change).
 
 ## What this mod changes
 
