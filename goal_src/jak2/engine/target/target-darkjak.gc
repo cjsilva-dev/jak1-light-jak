@@ -1949,13 +1949,6 @@
 ;; lanes). From a downward-ray collision survey of each district: port 86.4,
 ;; inda 57.3, slumc 51.9, genc 43.7, genb 42.7, indb 36.9, farma 30.3, sluma 24.9, slumb 24.5,
 ;; gena 24.2, farmb 18.8. Streets are ~8-17 m.
-(define *df-ceil-port*      (meters 94))
-(define *df-ceil-inda*      (meters 65))
-(define *df-ceil-slumc*     (meters 60))
-(define *df-ceil-genc*      (meters 52))
-(define *df-ceil-genb*      (meters 51))
-(define *df-ceil-indb*      (meters 45))
-(define *df-ceil-default*   (meters 40))  ;; sluma, slumb, gena, farma, farmb and the rest
 
 ;; ---- DARK FLIGHT: flap motion, wing unfurl/fold, sounds ----
 ;; Flight pose: the Dark Jak jump animation (aframes) follows Jak's climb/sink instead of one frozen frame.
@@ -2578,19 +2571,7 @@
   (when *fc-in-city?*
     ;; the ceiling of the district Jak is actually over (current-level lags far behind in flight;
     ;; the streamer's continue-point lookup is current)
-    (let ((nm (symbol->string (if (and *fs-stream-now* (member *fs-stream-now* *df-city-districts*)) *fs-stream-now* (-> self current-level name)))))
-      (set! *fc-city-ceiling* (cond
-                                ((string-prefix= "ctyport" nm) *df-ceil-port*)
-                                ((string-prefix= "ctyinda" nm) *df-ceil-inda*)
-                                ((string-prefix= "ctyslumc" nm) *df-ceil-slumc*)
-                                ((string-prefix= "ctygenc" nm) *df-ceil-genc*)
-                                ((string-prefix= "ctygenb" nm) *df-ceil-genb*)
-                                ((string= "stadium" nm) *df-ceil-genb*)
-                                ((string-prefix= "ctyindb" nm) *df-ceil-indb*)
-                                (else *df-ceil-default*)
-                                )
-            )
-      )
+    (set! *fc-city-ceiling* *fc-city-ceil*) ;; one height for the whole city (flight-core.gc)
     (when (not (fs-city-mission?))
       (let* ((tv (-> self control transv))
              (v (vector-float*! (new-stack-vector0) tv *fc-region-ahead*))
