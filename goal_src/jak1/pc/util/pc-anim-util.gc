@@ -81,6 +81,8 @@ This is used for funny cheat codes and the like.
       (cspace-map-joints obj cspace-idx #t matrix*!-bone-callback matrix3 scale)
       (matrix*!-bone-callback (-> obj node-list data cspace-idx bone) #t matrix3 scale))))
 
+(define-extern white-jak-postbind (function target none)) ;; WHITE JAK (engine/mods/white-jak.gc)
+
 (defun target-joint-callback-pc ((obj target))
   "custom animation callback for *target*"
   (let ((neckA-idx (cspace-index-by-name obj "neckA")))
@@ -91,6 +93,7 @@ This is used for funny cheat codes and the like.
   (when (and (pc-cheats? (-> *pc-settings* cheats) big-fist) (!= 'target-edge-grab (-> obj next-state name)))
     (scale-joints obj (cspace-index-by-name obj "sk_lhand") #t *cheat-huge-head-scale*)
     (scale-joints obj (cspace-index-by-name obj "sk_rhand") #t *cheat-huge-head-scale*))
+  (white-jak-postbind obj) ;; WHITE JAK: copy this frame's pose onto the puppet
   0
   (none))
 

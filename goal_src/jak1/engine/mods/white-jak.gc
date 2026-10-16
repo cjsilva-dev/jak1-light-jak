@@ -1,0 +1,137 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: white-jak.gc
+;; name in dgo: white-jak
+;; dgos: GAME
+
+;; WHITE JAK (prototype): the final boss's white-eco Jak (jak-white-ag, the model from the ending) drawn in place
+;; of the player. jak-white has the same 83 bones as Jak (eichar) in a different order and only an idle animation,
+;; so it is a puppet: Jak keeps animating as normal, and right after his joint math each frame
+;; (target-joint-callback-pc, pc-anim-util.gc) every bone's world transform is copied BY JOINT NAME onto the puppet's
+;; skeleton. Jak's own mesh is skipped in the foreground draw (drawable.gc, *white-jak-hidden-proc*) but his joint math
+;; keeps running, which the hidden flag would stop. The mesh reaches the renderer through the decompiler's
+;; common_art_groups (decompiler/config/jak1/jak1_config.jsonc), the art group through GAME.CGO (dgos/game.gd).
+;; R3 toggles it.
+
+(defskelgroup *white-jak-sg*
+  jak-white
+  jak-white-lod0-jg
+  jak-white-idle-ja
+  ((jak-white-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 4))
+
+(define *white-jak-on?* #t)
+
+;; glow added on top of Jak's own lighting; the ending uses 0.5
+(define *white-jak-emissive* 0.5)
+
+(define *white-jak-handle* (the-as handle #f))
+
+(defconstant WHITE_JAK_MAX_NODES 96)
+
+(deftype white-jak (process-drawable)
+  ((bone-map   int16 96) ;; for each of our nodes, the node in Jak's skeleton with the same joint name (-1 = none)
+   (node-count int32)
+   (mapped?    symbol))
+  (:states
+   white-jak-idle))
+
+(defbehavior white-jak-build-map white-jak ((jak target))
+  "For each of our nodes, find Jak's node whose joint has the same name. Node 0 (the root, no joint) maps to 0."
+  (let ((ours (-> self node-list))
+        (his (-> jak node-list))
+        (missing 0))
+    (set! (-> self node-count) (min (-> ours length) WHITE_JAK_MAX_NODES))
+    (set! (-> self bone-map 0) 0)
+    (countdown (k (+ (-> self node-count) -1))
+      (let* ((i (+ k 1))
+             (jt (-> ours data i joint))
+             (found -1))
+        (when jt
+          (dotimes (j (-> his length))
+            (let ((hj (-> his data j joint))) (if (and (< found 0) hj (string= (-> hj name) (-> jt name))) (set! found j)))))
+        (if (< found 0) (+! missing 1))
+        (set! (-> self bone-map i) found)))
+    (format 0 "white-jak: mapped ~D nodes (Jak has ~D), ~D unmatched~%" (-> self node-count) (-> his length) missing))
+  (set! (-> self mapped?) #t)
+  (none))
+
+(defun white-jak-active? ()
+  "Should the puppet show this frame? Off with the toggle, or whenever the game itself hides Jak (cutscenes)."
+  (and *white-jak-on?*
+       *target*
+       (nonzero? (-> *target* draw))
+       (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))))
+
+(defun white-jak-postbind ((jak target))
+  "Called from Jak's postbind (after his joint math, before the draw): copy his pose onto the puppet."
+  (let ((wj (the-as white-jak (handle->process *white-jak-handle*))))
+    (when (and wj (-> wj mapped?) (white-jak-active?))
+      (let ((dst (-> wj node-list))
+            (src (-> jak node-list)))
+        (dotimes (i (-> wj node-count))
+          (let ((j (-> wj bone-map i)))
+            (when (>= j 0)
+              (let ((d (-> dst data i bone))
+                    (s (-> src data j bone)))
+                (set! (-> d transform vector 0 quad) (-> s transform vector 0 quad))
+                (set! (-> d transform vector 1 quad) (-> s transform vector 1 quad))
+                (set! (-> d transform vector 2 quad) (-> s transform vector 2 quad))
+                (set! (-> d transform vector 3 quad) (-> s transform vector 3 quad))
+                (set! (-> d scale quad) (-> s scale quad)))))))
+      ;; the renderer culls on origin + bounds
+      (set! (-> wj root trans quad) (-> jak root trans quad))
+      (set! (-> wj draw origin quad) (-> jak draw origin quad))
+      (set! (-> wj draw light-index) (-> jak draw light-index))
+      (set! (-> wj draw color-mult quad) (-> jak draw color-mult quad))
+      (let ((e *white-jak-emissive*))
+        (set-vector! (-> wj draw color-emissive)
+                     (+ e (-> jak draw color-emissive x))
+                     (+ e (-> jak draw color-emissive y))
+                     (+ e (-> jak draw color-emissive z))
+                     0.0))))
+  0
+  (none))
+
+(defstate white-jak-idle (white-jak)
+  :trans
+    (behavior ()
+      (when (and (not (-> self mapped?)) *target*)
+        (white-jak-build-map *target*))
+      (cond
+        ((and (-> self mapped?) (white-jak-active?))
+         (logclear! (-> self draw status) (draw-status hidden no-anim no-skeleton-update))
+         (set! *white-jak-hidden-proc* *target*))
+        (else
+         (logior! (-> self draw status) (draw-status hidden))
+         (set! *white-jak-hidden-proc* (the-as process-drawable #f)))))
+  :code
+    (behavior ()
+      (loop
+        (suspend))))
+
+(defbehavior white-jak-init-by-other white-jak ()
+  (set! (-> self root) (new 'process 'trsqv))
+  (if *target* (set! (-> self root trans quad) (-> *target* root trans quad)))
+  (initialize-skeleton self *white-jak-sg* '())
+  (set! (-> self mapped?) #f)
+  ;; never animated or joint-mathed itself: its bones are written by white-jak-postbind
+  (logior! (-> self draw status) (draw-status hidden))
+  (go white-jak-idle)
+  (none))
+
+(defun white-jak-maintenance ()
+  "Every frame (runs-every-frame): R3 toggles; keep one puppet alive under Jak; give Jak's mesh back when off."
+  (when (cpad-pressed? 0 r3)
+    (set! *white-jak-on?* (not *white-jak-on?*))
+    (format 0 "white-jak: ~A~%" (if *white-jak-on?* "on" "off")))
+  (cond
+    ((not *target*)
+     (set! *white-jak-hidden-proc* (the-as process-drawable #f)))
+    ((not (handle->process *white-jak-handle*))
+     (set! *white-jak-hidden-proc* (the-as process-drawable #f))
+     (let ((p (process-spawn white-jak :to *target*)))
+       (if p (set! *white-jak-handle* (ppointer->handle p))))))
+  (if (not *white-jak-on?*) (set! *white-jak-hidden-proc* (the-as process-drawable #f)))
+  (none))

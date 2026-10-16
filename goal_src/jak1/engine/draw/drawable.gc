@@ -418,6 +418,10 @@
   )
 |#
 
+;; WHITE JAK (prototype): the process whose mesh is not drawn while the white-Jak puppet stands in for it (always
+;; *target* or #f; set by white-jak.gc). Unlike the hidden flag, this leaves its joint math running.
+(define *white-jak-hidden-proc* (the-as process-drawable #f))
+
 (defun dma-add-process-drawable ((arg0 process-drawable) (arg1 draw-control) (arg2 symbol) (arg3 dma-buffer))
   (local-vars (v1-37 float))
   (rlet ((acc :class vf)
@@ -445,7 +449,8 @@
     (init-vf0-vector)
     (let ((sv-16 arg0))
       (logclear! (-> arg1 status) (draw-status was-drawn))
-      (when (not (logtest? (-> arg1 status) (draw-status hidden no-anim no-skeleton-update)))
+      (when (and (not (logtest? (-> arg1 status) (draw-status hidden no-anim no-skeleton-update)))
+                 (not (= arg0 *white-jak-hidden-proc*))) ;; WHITE JAK: the puppet draws instead
         ;; og:preserve-this scratchpad
         (let ((s4-0 (-> (scratchpad-object terrain-context) work foreground joint-work temp-mtx vector 2))
               (vu-lgt (the-as vu-lights (-> (scratchpad-object terrain-context) work foreground joint-work temp-mtx vector 3)))

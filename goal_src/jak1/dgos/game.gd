@@ -350,6 +350,7 @@
   "mod-settings.o" ;; added mod-base-change
   "mod-common-functions.o" ;; added
   "orb-placer.o" ;; added
+  "white-jak.o" ;; WHITE JAK
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
   ;; keep zoomer stuff loaded
@@ -368,6 +369,7 @@
   "target-flut.o"
   "flut-saddle-ag.go"
   "eichar-flut+0-ag.go"
+  "jak-white-ag.go" ;; WHITE JAK: the final boss's white Jak (mesh in the common fr3: jak1_config.jsonc common_art_groups)
   ;; keep blocking-plane stuff loaded
   "blocking-plane.o"
   "ef-plane-ag.go"
