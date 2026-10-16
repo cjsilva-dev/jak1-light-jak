@@ -282,11 +282,21 @@
   ((method-of-type process-drawable deactivate) this)
   (none))
 
-(defun white-jak-maintenance ()
-  "Every frame (runs-every-frame): R3 toggles; keep one puppet alive under Jak; give Jak's mesh back when off."
-  (when (cpad-pressed? 0 r3)
-    (set! *white-jak-on?* (not *white-jak-on?*))
-    (format 0 "white-jak: ~A~%" (if *white-jak-on?* "on" "off")))
+(defun white-jak-switch! ((on? symbol))
+  "White Jak on/off (R3). Switching on bursts the white-eco aura around him, with a rumble and a sound."
+  (set! *white-jak-on?* on?)
+  (format 0 "white-jak: ~A~%" (if *white-jak-on?* "on" "off"))
+  (when (and *white-jak-on?* *target*)
+      (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 200 (seconds 0.3))
+      (sound-play "blue-eco-on")
+      (dotimes (i 60)
+        (launch-particles (-> *part-id-table* 3500) (process-drawable-random-point! *target* (new 'stack-no-clear 'vector))))
+      (dotimes (i 40)
+        (launch-particles (-> *part-id-table* 3502) (process-drawable-random-point! *target* (new 'stack-no-clear 'vector)))))
+  (none))
+
+(defun white-jak-maintenance-rest ()
+  "The rest of the every-frame upkeep: keep one puppet alive under Jak; give Jak's mesh back when off."
   (cond
     ((not *target*)
      (set! *white-jak-hidden-proc* (the-as process-drawable #f)))
@@ -301,3 +311,8 @@
           (if p (set! (-> *white-jak* handle) (ppointer->handle p))))))))
   (if (not *white-jak-on?*) (set! *white-jak-hidden-proc* (the-as process-drawable #f)))
   (none))
+
+(defun white-jak-maintenance ()
+  "Every frame (runs-every-frame): R3 toggles; keep one puppet alive under Jak; give Jak's mesh back when off."
+  (if (cpad-pressed? 0 r3) (white-jak-switch! (not *white-jak-on?*)))
+  (white-jak-maintenance-rest))

@@ -33,9 +33,11 @@
 ;; the glow and multiplier only scale the texture's colour (0.15 / 1.0 still drew deep blue), so the wings are white
 ;; through texture replacements (custom_assets/jak1/texture_replacements/snow-vis-pris, whiten-flut.py, made from the
 ;; player's own extract and never committed); these just make them glow like Jak
-(define *ww-glow* (new 'static 'vector :x 0.35 :y 0.4 :z 0.5 :w 0.0))
+(define *ww-glow* (new 'static 'vector :x 0.55 :y 0.6 :z 0.7 :w 0.0)) ;; "still a bit grey" at 0.35 / 0.4 / 0.5 (Corey)
 (define *ww-mult* (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0))
-(define *ww-beat-fps*  30.0) ;; the pelican's fly loop between flaps (frames per second)
+(define *ww-beat-fps*  30.0) ;; the pelican's glide loop (frames per second)
+(define *ww-stroke*    0.45) ;; seconds for ONE full wing stroke per X press (Corey: the beat must match the presses)
+(define *ww-idle-fps*  5.0)  ;; between presses the wings only drift
 (define *ww-glide-sway* 0.08) ;; while gliding: a slow sway around the spread frame (share of the flap)
 (define *ww-beat* 0.0)       ;; position in the flap cycle, frames
 ;; DEBUG: 0 = normal; 1 = the whole bird as its joint math made it, at Jak (no shrink, no move); 2 = shrink only
@@ -179,14 +181,18 @@
       (ja-channel-set! 1)
       (ja :group! pelican-fly-ja :num! min)
       (loop
-        ;; the pelican's own loops: its fly loop while Jak flaps (a flap press restarts the beat and plays it faster for
-        ;; a moment), its glide loop while he glides
+        ;; one full stroke of the pelican's fly loop per X press (*ww-stroke* seconds), then a slow drift until the next
+        ;; press; while gliding its glide loop at its own pace
         (let* ((since (- (current-time) *wf-flap-time*))
                (anim (the-as art-joint-anim (if *wf-gliding?* pelican-glide-ja pelican-fly-ja)))
                (n (the float (+ -1 (-> anim data 0 length))))
-               (dt (seconds-per-frame)))
+               (dt (seconds-per-frame))
+               (stroking? (and (not *wf-gliding?*) (< since (the time-frame (* *ww-stroke* 300.0))))))
           (if (< since (seconds 0.04)) (set! *ww-beat* 0.0))
-          (set! *ww-beat* (+ *ww-beat* (* dt (if (and (not *wf-gliding?*) (< since (seconds 0.5))) *ww-flap-fps* *ww-beat-fps*))))
+          (set! *ww-beat* (+ *ww-beat* (* dt (cond
+                                               (*wf-gliding?* *ww-beat-fps*)
+                                               (stroking? (/ n *ww-stroke*))
+                                               (else *ww-idle-fps*)))))
           (if (>= *ww-beat* n) (set! *ww-beat* (- *ww-beat* (* n (the float (the int (/ *ww-beat* n)))))))
           (ja :group! anim :num! (identity *ww-beat*)))
         (suspend))))
