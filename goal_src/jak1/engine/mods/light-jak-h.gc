@@ -1,0 +1,156 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: light-jak-h.gc
+;; name in dgo: light-jak-h
+;; dgos: GAME
+
+;; LIGHT JAK IN JAK 1: the types, the tuning and the state, in one file compiled right after target-h so that the
+;; engine files that read the state (cam-master, drawable, target, target-handler, logic-target) see it.
+;;
+;; What the mod is: the ending's white-eco Jak (jak-white-ag) drawn in place of the player as a puppet that copies his
+;; bones every frame (light-jak.gc), Jak 3's Light Jak flight on Jak 1's jump states (light-flight.gc), the Sentinel
+;; Beach pelican's wings on his back (light-wings.gc). Every engine hook is tagged LIGHT JAK.
+;;
+;; Tuning lives in ONE static structure so it can be changed live from the REPL ((set! (-> *lj-tune* glide-sink) ...))
+;; and linted against True Flight's values (scripts/lint/lj-tune-lint.py in the jak-modding skill): the flight must feel
+;; like Jak 3's Light Jak, not like Dark Flight (Corey, 2026-10-16). State lives in one static structure too: a handle
+;; or a 64-bit value in a plain Jak 1 global loses its top half (symbol values are 32 bits), which once spawned a new
+;; puppet every frame (2026-10-15).
+
+(deftype lj-tuning (structure)
+  (;; ---- flight: True Flight's Light Jak (target-lightjak.gc TF-* and flight-core.gc *fc-*) ----
+   (flap-impulse      float)      ;; added per flap (TF-FLAP-IMPULSE)
+   (climb-cap         float)      ;; fastest climb from stacked flaps (TF-CLIMB-CAP)
+   (flap-cooldown     time-frame) ;; between flaps
+   (windup            time-frame) ;; the flap's wind-up: the lift lands after it (Jak 3 swoop-again)
+   (windup-damp       float)      ;; per frame, on the vertical speed during the wind-up
+   (gravity           float)      ;; while flying (TF-GRAVITY)
+   (gravity-max       float)      ;; fastest fall while flying (FC-GRAVITY-MAX)
+   (hold-bonus        float)      ;; extra climb a held X adds (*fc-flap-hold-bonus*)
+   (hold-accel        float)      ;; how fast holding adds it (*fc-flap-hold-accel*)
+   (big-flap-impulse  float)      ;; a flap out of a glide (*fc-big-flap-impulse*)
+   (big-flap-cap      float)      ;; (*fc-big-flap-cap*)
+   (glide-sink        float)      ;; glide descent, m/s (*tf-glide-sink*)
+   (glide-cruise      float)      ;; speed a glide settles toward (*tf-glide-cruise*)
+   (glide-max         float)      ;; top glide speed without turbo (*fc-glide-max*)
+   (glide-accel       float)      ;; build-up toward cruise (*fc-glide-accel*)
+   (glide-turbo-accel float)      ;; R1 in a glide (*fc-glide-turbo-accel-city*: Jak 1's levels are district-sized)
+   (glide-turbo-max   float)      ;; (*fc-glide-turbo-max-city*)
+   (glide-turbo-sink  float)      ;; (*fc-glide-turbo-sink*)
+   (glide-convert     float)      ;; share of shed fall speed that becomes forward speed (*fc-glide-convert*)
+   (glide-catch       float)      ;; how hard a steep fall levels out (*fc-glide-catch*)
+   (glide-drag        float)      ;; per-second pull of excess speed back to cruise (*fc-glide-drag*)
+   (glide-gravity     float)      ;; while gliding (*fc-glide-gravity*)
+   (dash-speed        float)      ;; R1 tap (*fc-dash-speed*)
+   (dash-time         time-frame) ;; (*fc-dash-time*)
+   (dash-cooldown     time-frame) ;; (*fc-dash-cooldown*)
+   (glide-pitch       float)      ;; degrees of forward lean in a glide (Jak 3's Light glide is upright: a small lean sells it on Jak 1's jump pose)
+   (pitch-step        float)      ;; degrees per frame toward it
+   ;; ---- the superhero landing (Square in flight = Jak 1's ground pound, plunging) ----
+   (slam-speed        float)      ;; the plunge starts at least this fast (*fc-slam-speed*)
+   (slam-max          float)      ;; terminal plunge speed (Jak 1's own ground-pound cap)
+   (slam-boost-max    float)      ;; while Square is held
+   (slam-blast        float)      ;; the strike ring's reach
+   ;; ---- the flight camera ----
+   (cam-dist          float)      ;; behind Jak
+   (cam-height        float)      ;; above him
+   (cam-glide-dist    float)
+   (cam-glide-height  float)
+   (cam-look-up       float)      ;; looks at this point above his feet
+   (cam-follow        float)      ;; per second, toward the wanted position
+   (cam-swing         float)      ;; per second, in behind the flight path (above 8 m/s)
+   (cam-blend-in      float)      ;; per second, from the game camera
+   (cam-blend-out     float)      ;; per second, back to it
+   (cam-radius        float)      ;; the collision probe's sphere
+   ;; ---- the flying pose: Jak's jump animation, driven by his vertical speed (aframes) ----
+   (pose-up           float)
+   (pose-apex         float)
+   (pose-down         float)
+   (pose-kick         float)
+   (pose-glide        float)
+   (pose-range        float)      ;; vertical speed for the full up/down pose
+   (pose-rate         float)      ;; aframes per second
+   (pose-kick-rate    float)      ;; ... right after a flap
+   ;; ---- the look ----
+   (glow              vector :inline) ;; added to Jak's emissive
+   (mult              vector :inline) ;; on his colour
+   (wing-glow         vector :inline)
+   (wing-mult         vector :inline)
+   ;; ---- the wings ----
+   (wing-scale        float)      ;; the pelican's size on Jak
+   (wing-shrink       float)      ;; its body bones shrink to this
+   (wing-up           float)      ;; anchor: along Jak's up from his chest bone
+   (wing-back         float)      ;; ... and behind it
+   (wing-stroke       float)      ;; seconds for one full stroke per X press
+   (wing-idle-fps     float)      ;; between presses the wings only drift
+   (wing-glide-fps    float)))    ;; the glide loop's pace
+
+(define *lj-tune*
+  (new 'static 'lj-tuning
+       :flap-impulse (meters 12) :climb-cap (meters 20) :flap-cooldown (seconds 0.35)
+       :windup (seconds 0.1) :windup-damp 0.95
+       :gravity 81920.0 :gravity-max 163840.0
+       :hold-bonus (meters 10) :hold-accel (meters 25)
+       :big-flap-impulse (meters 28) :big-flap-cap (meters 35)
+       :glide-sink (meters 3) :glide-cruise (meters 18) :glide-max (meters 45) :glide-accel (meters 10)
+       :glide-turbo-accel (meters 25) :glide-turbo-max (meters 50) :glide-turbo-sink (meters 1)
+       :glide-convert 0.8 :glide-catch (meters 30) :glide-drag 0.25 :glide-gravity 49152.0
+       :dash-speed (meters 55) :dash-time (seconds 0.3) :dash-cooldown (seconds 0.6)
+       :glide-pitch 30.0 :pitch-step 3.0
+       :slam-speed (meters 20) :slam-max 245760.0 :slam-boost-max 409600.0 :slam-blast (meters 9)
+       :cam-dist (meters 8) :cam-height (meters 3) :cam-glide-dist (meters 10) :cam-glide-height (meters 4)
+       :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-blend-in 3.0 :cam-blend-out 2.0
+       :cam-radius (meters 0.6)
+       :pose-up 8.0 :pose-apex 20.0 :pose-down 33.0 :pose-kick 4.0 :pose-glide 29.0
+       :pose-range (meters 12) :pose-rate 30.0 :pose-kick-rate 70.0
+       :glow (new 'static 'vector :x 0.3 :y 0.42 :z 0.85 :w 0.0)
+       :mult (new 'static 'vector :x 0.7 :y 0.82 :z 1.35 :w 1.0)
+       :wing-glow (new 'static 'vector :x 0.55 :y 0.6 :z 0.7 :w 0.0)
+       :wing-mult (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0)
+       :wing-scale 0.55 :wing-shrink 0.15 :wing-up (meters 0.15) :wing-back (meters 0.25)
+       :wing-stroke 0.45 :wing-idle-fps 5.0 :wing-glide-fps 30.0))
+
+(deftype lj-state (structure)
+  ((on?           symbol)     ;; Light Jak form on (R3 toggles)
+   (wings-on?     symbol)     ;; wings shown in flight
+   (flying?       symbol)     ;; a flight is in progress (set at takeoff, cleared at the landing / state exit)
+   (gliding?      symbol)     ;; L1 held in flight
+   (holding?      symbol)     ;; X still held through the last flap
+   (from-glide?   symbol)     ;; the pending flap came out of a glide (the big one)
+   (flap-pending? symbol)     ;; a flap's wind-up is running
+   (slam?         symbol)     ;; a superhero landing is in progress
+   (slam-started? symbol)
+   (flap-time     time-frame) ;; last flap press
+   (dash-start    time-frame)
+   (hold-given    float)
+   (glide-speed   float)
+   (body-pitch    float)
+   (pose-cur      float)
+   (cam-blend     float)
+   (cam-pos       vector :inline)
+   (wing-beat     float)      ;; position in the wings' flap cycle, frames
+   (puppet        handle)     ;; the white Jak process (child of Jak, spawned with him)
+   (wings         handle)
+   (hidden-proc   process-drawable))) ;; the process whose mesh the draw skips (Jak while the puppet stands in), or #f
+
+(define *lj* (new 'static 'lj-state :on? #t :wings-on? #t :pose-cur 20.0))
+;; a zeroed handle or pointer is NOT "none" here (0 is true in GOAL): set the empties at load
+(set! (-> *lj* puppet) (the-as handle #f))
+(set! (-> *lj* wings) (the-as handle #f))
+(set! (-> *lj* hidden-proc) (the-as process-drawable #f))
+(set! (-> *lj* cam-pos w) 1.0)
+
+(defun lj-reset! ()
+  "Everything a flight sets, cleared. At Jak's birth (a new game, a load, a death) and whenever a flight ends."
+  (set! (-> *lj* flying?) #f)
+  (set! (-> *lj* gliding?) #f)
+  (set! (-> *lj* holding?) #f)
+  (set! (-> *lj* from-glide?) #f)
+  (set! (-> *lj* flap-pending?) #f)
+  (set! (-> *lj* slam?) #f)
+  (set! (-> *lj* slam-started?) #f)
+  (set! (-> *lj* hold-given) 0.0)
+  (set! (-> *lj* glide-speed) 0.0)
+  (set! (-> *lj* body-pitch) 0.0)
+  (none))

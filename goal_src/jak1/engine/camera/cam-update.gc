@@ -215,8 +215,8 @@
 
 (define *start-pos* (new 'global 'vector))
 
-;; WHITE JAK FLIGHT: called after the game camera is copied into *math-camera* (white-flight.gc's flight camera)
-(define *wf-cam-hook* (the-as (function none) #f))
+;; LIGHT JAK: called after the game camera is copied into *math-camera* (light-flight.gc's flight camera)
+(define *lj-cam-hook* (the-as (function none) #f))
 
 (defun update-camera ()
   (when *start-timer*
@@ -315,7 +315,7 @@
        (set! (-> v1-101 vector 2 quad) a2-12)
        (set! (-> v1-101 vector 3 quad) a3-11)))
     (else (move-camera-from-pad *math-camera*)))
-  (if *wf-cam-hook* (*wf-cam-hook*)) ;; WHITE JAK FLIGHT camera (before the smoothed copy that steering reads)
+  (if *lj-cam-hook* (*lj-cam-hook*)) ;; LIGHT JAK: the flight camera (before the smoothed copy that steering reads)
   (matrix-transpose! (-> *math-camera* camera-rot) (-> *math-camera* inv-camera-rot))
   (cond
     (*camera-no-mip-correction* (set! (-> *math-camera* fov-correction-factor) 1.0))

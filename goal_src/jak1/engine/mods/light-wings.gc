@@ -1,0 +1,166 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: light-wings.gc
+;; name in dgo: light-wings
+;; dgos: GAME
+
+;; LIGHT JAK IN JAK 1, the wings: the Sentinel Beach pelican (pelican-ag, in the common fr3 and GAME.CGO) on his back
+;; while he flies, Dark Flight's "Dark Angel" trick: the whole bird rides on Jak's back with every bone except the two
+;; wing chains (l/rShoulder, l/rElbow, l/rHand*) shrunk into a lump at the anchor. Like the puppet it never runs its
+;; own ja-post: from Jak's postbind (lj-form-postbind) lj-wings-place evaluates its animation and joint math with the
+;; bird at the origin, then re-bases every bone onto Jak's chest. One full stroke of its fly loop per X press, a slow
+;; drift between presses, its glide loop while gliding. (The Flut Flut's wings were tried first: "not angelic", and
+;; blue.) White: the feathers are whitened in the built GAME.fr3 by fr3-whiten.py (texture replacements never reach a
+;; common_art_groups model: extract_merc copies the raw pixels).
+
+(defskelgroup *lj-wings-sg*
+  pelican
+  pelican-lod0-jg
+  pelican-fly-ja
+  ((pelican-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 6))
+
+(deftype lj-wings (process-drawable)
+  ((keep        int8 64)  ;; per node: 1 = a wing bone (kept), 0 = body (shrunk into the anchor)
+   (chest-node  int32)
+   (mapped?     symbol)
+   (shown?      symbol))
+  (:states
+   lj-wings-idle))
+
+(defun lj-prefix? ((s string) (p string))
+  "Does S start with P? (Jak 1 has no prefix test for strings.)"
+  (let ((n (length p))
+        (ok #t))
+    (if (< (length s) n)
+      (set! ok #f)
+      (dotimes (i n)
+        (if (!= (-> s data i) (-> p data i)) (set! ok #f))))
+    ok))
+
+(defbehavior lj-wings-map lj-wings ()
+  (let ((nl (-> self node-list)))
+    (set! (-> self chest-node) 0)
+    (dotimes (i (min 64 (-> nl length)))
+      (set! (-> self keep i) 0)
+      (let ((jt (-> nl data i joint)))
+        (when jt
+          (let ((nm (-> jt name)))
+            (if (string= nm "chest") (set! (-> self chest-node) i))
+            (if (or (string= nm "lShoulder") (string= nm "lElbow") (lj-prefix? nm "lHand")
+                    (string= nm "rShoulder") (string= nm "rElbow") (lj-prefix? nm "rHand"))
+              (set! (-> self keep i) 1)))))))
+  (set! (-> self mapped?) #t)
+  (none))
+
+(defun lj-wings-show? ()
+  (and (-> *lj* wings-on?) (-> *lj* flying?) (lj-form-active?)))
+
+(defun lj-wings-place ((jak target))
+  "From Jak's postbind: animate the bird at the origin, then move every bone onto Jak's back (wing bones at wing-scale,
+   body bones shrunk into the anchor). Every bone is moved: a bone left behind stretches the vertices weighted between
+   it and its moved neighbours across the screen (2026-10-15)."
+  (let ((ww (the-as lj-wings (handle->process (-> *lj* wings))))
+        (t *lj-tune*))
+    (when (and ww (-> ww shown?))
+      ;; the bird's own pose, at the origin, upright. Not vector-reset!: that zeroes w too, and Jak 1's bone matrices
+      ;; carry a scale in the translation's w (scale-joints divides by it); w = 0 sent every vertex to infinity.
+      (set-vector! (-> ww root trans) 0.0 0.0 0.0 1.0)
+      (quaternion-identity! (-> ww root quat))
+      (evaluate-joint-control ww)
+      (do-joint-math! ww)
+      ;; the anchor: Jak's chest bone + offsets, Jak's facing (+ the glide lean), the bird's scale
+      (let* ((jq (-> jak control quat))
+             (up (vector-y-quaternion! (new 'stack-no-clear 'vector) jq))
+             (fwd (vector-z-quaternion! (new 'stack-no-clear 'vector) jq))
+             (tq (new 'stack-no-clear 'transformq))
+             (anchor (new 'stack-no-clear 'matrix))
+             (m (new 'stack-no-clear 'matrix))
+             (chest (new 'stack-no-clear 'vector)))
+        (set! (-> tq trans quad) (-> jak node-list data 5 bone transform vector 3 quad))
+        (vector+float*! (-> tq trans) (-> tq trans) up (-> t wing-up))
+        (vector+float*! (-> tq trans) (-> tq trans) fwd (- (-> t wing-back)))
+        (set! (-> tq trans w) 1.0)
+        (let ((lean (quaternion-axis-angle! (new 'stack-no-clear 'quaternion) 1.0 0.0 0.0 (degrees (-> *lj* body-pitch)))))
+          (quaternion*! (-> tq quat) jq lean))
+        (set-vector! (-> tq scale) (-> t wing-scale) (-> t wing-scale) (-> t wing-scale) 1.0)
+        (matrix<-transformq! anchor tq)
+        (set! (-> chest quad) (-> ww node-list data (-> ww chest-node) bone transform vector 3 quad))
+        (dotimes (i (min 64 (-> ww node-list length)))
+          (let ((b (-> ww node-list data i bone)))
+            (matrix-copy! m (-> b transform))
+            (cond
+              ((= (-> ww keep i) 1)
+               ;; a wing bone: relative to the bird's chest
+               (vector-! (-> m vector 3) (-> m vector 3) chest)
+               (set! (-> m vector 3 w) 1.0))
+              (else
+               ;; a body bone: shrunk and collapsed onto the anchor. vector-float*! sets w = 1, and an axis row with
+               ;; w = 1 pulls the anchor's position into every vertex: axis rows keep w = 0.
+               (vector-float*! (-> m vector 0) (-> m vector 0) (-> t wing-shrink))
+               (vector-float*! (-> m vector 1) (-> m vector 1) (-> t wing-shrink))
+               (vector-float*! (-> m vector 2) (-> m vector 2) (-> t wing-shrink))
+               (set! (-> m vector 0 w) 0.0)
+               (set! (-> m vector 1 w) 0.0)
+               (set! (-> m vector 2 w) 0.0)
+               (set-vector! (-> m vector 3) 0.0 0.0 0.0 1.0)))
+            (matrix*! (-> b transform) m anchor)))
+        (set! (-> ww root trans quad) (-> tq trans quad))
+        (set! (-> ww draw origin quad) (-> tq trans quad))
+        (set! (-> ww draw light-index) (-> jak draw light-index))
+        (vector*! (-> ww draw color-mult) (-> jak draw color-mult) (-> t wing-mult))
+        (set! (-> ww draw color-mult w) (-> jak draw color-mult w))
+        (vector+! (-> ww draw color-emissive) (-> jak draw color-emissive) (-> t wing-glow))
+        (set! (-> ww draw color-emissive w) 0.0))))
+  (none))
+
+(defbehavior lj-wings-show! lj-wings ((on? symbol))
+  (set! (-> self shown?) on?)
+  (if on?
+    (logclear! (-> self draw status) (draw-status hidden no-anim no-skeleton-update))
+    (logior! (-> self draw status) (draw-status hidden)))
+  (none))
+
+(defstate lj-wings-idle (lj-wings)
+  :trans
+    (behavior ()
+      (if (not (-> self mapped?)) (lj-wings-map))
+      (let ((want (if (and (-> self mapped?) (lj-wings-show?)) #t #f)))
+        (if (!= want (-> self shown?)) (lj-wings-show! want))))
+  :code
+    (behavior ()
+      (ja-channel-set! 1)
+      (ja :group! pelican-fly-ja :num! min)
+      (loop
+        (when (-> self shown?)
+          (let* ((t *lj-tune*)
+                 (since (- (current-time) (-> *lj* flap-time)))
+                 (gliding? (-> *lj* gliding?))
+                 (anim (the-as art-joint-anim (if gliding? pelican-glide-ja pelican-fly-ja)))
+                 (n (the float (+ -1 (-> anim data 0 length))))
+                 (stroking? (and (not gliding?) (< since (the time-frame (* (-> t wing-stroke) 300.0)))))
+                 (fps (cond (gliding? (-> t wing-glide-fps)) (stroking? (/ n (-> t wing-stroke))) (else (-> t wing-idle-fps))))
+                 (beat (if (< since (seconds 0.04)) 0.0 (+ (-> *lj* wing-beat) (* fps (seconds-per-frame))))))
+            (if (>= beat n) (set! beat (- beat (* n (the float (the int (/ beat n)))))))
+            (set! (-> *lj* wing-beat) beat)
+            (ja :group! anim :num! (identity beat))))
+        (suspend))))
+
+(defbehavior lj-wings-init-by-other lj-wings ()
+  (set! (-> self root) (new 'process 'trsqv))
+  ;; a new trsqv's scale is zero: the bird's joint math then makes zero-scale bones, whose normal matrices divide by zero
+  (vector-identity! (-> self root scale))
+  (initialize-skeleton self *lj-wings-sg* '())
+  (set! (-> self mapped?) #f)
+  (set! (-> self shown?) #f)
+  (logior! (-> self draw status) (draw-status hidden))
+  (go lj-wings-idle)
+  (none))
+
+(defun lj-wings-spawn ((jak target))
+  "At Jak's birth, with the puppet (lj-form-spawn)."
+  (let ((p (process-spawn lj-wings :to jak)))
+    (set! (-> *lj* wings) (if p (ppointer->handle p) (the-as handle #f)))
+    (if (not p) (format 0 "light-jak: no memory for the wings~%")))
+  (none))

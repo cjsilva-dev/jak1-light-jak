@@ -967,10 +967,10 @@
   (target-powerup-process)
   (none))
 
-(define-extern white-flight-pose (function none :behavior target)) ;; WHITE JAK FLIGHT (engine/mods/white-flight.gc)
+(define-extern lj-flight-pose (function none :behavior target)) ;; LIGHT JAK (engine/mods/light-flight.gc)
 
 (defbehavior target-post target ()
-  (white-flight-pose) ;; WHITE JAK FLIGHT: the flying pose, set before the animation is evaluated
+  (lj-flight-pose) ;; LIGHT JAK: the flying pose, set before the animation is evaluated
   (target-real-post)
   (none))
 
@@ -1164,6 +1164,8 @@
   (buzz-stop! 0)
   self)
 
+(define-extern lj-form-spawn (function target none)) ;; LIGHT JAK (engine/mods/light-jak.gc)
+
 (defbehavior init-target target ((arg0 continue-point))
   (set-setting! 'allow-pause #f 0.0 0)
   (set-setting! 'allow-progress #f 0.0 0)
@@ -1231,6 +1233,7 @@
   (set! (-> self control current-surface active-hook) nothing)
   (set! (-> self control current-surface touch-hook) nothing)
   (initialize-skeleton self *jchar-sg* '())
+  (lj-form-spawn self) ;; LIGHT JAK: the puppet and the wings, his children (engine/mods/light-jak.gc)
   (set! (-> self draw origin-joint-index) (the-as uint 33))
   (set! (-> self draw shadow-joint-index) (the-as uint 33))
   (let ((v1-79 (-> self node-list data)))

@@ -117,6 +117,7 @@
   "collide-frag-h.o"
   "projectiles-h.o"
   "target-h.o"
+  "light-jak-h.o" ;; LIGHT JAK: types, tuning, state
   "depth-cue-h.o"
   "stats-h.o"
   "bsp-h.o"
@@ -350,9 +351,9 @@
   "mod-settings.o" ;; added mod-base-change
   "mod-common-functions.o" ;; added
   "orb-placer.o" ;; added
-  "white-jak.o" ;; WHITE JAK
-  "white-flight.o" ;; WHITE JAK FLIGHT
-  "white-wings.o" ;; WHITE JAK WINGS
+  "light-jak.o" ;; LIGHT JAK
+  "light-flight.o" ;; LIGHT JAK
+  "light-wings.o" ;; LIGHT JAK
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
   ;; keep zoomer stuff loaded
@@ -371,8 +372,8 @@
   "target-flut.o"
   "flut-saddle-ag.go"
   "eichar-flut+0-ag.go"
-  "jak-white-ag.go" ;; WHITE JAK: the final boss's white Jak (mesh in the common fr3: jak1_config.jsonc common_art_groups)
-  "pelican-ag.go" ;; WHITE JAK WINGS: the Sentinel Beach pelican's wings (mesh in the common fr3 too)
+  "jak-white-ag.go" ;; LIGHT JAK: the final boss's white Jak (mesh in the common fr3: jak1_config.jsonc common_art_groups)
+  "pelican-ag.go" ;; LIGHT JAK: the Sentinel Beach pelican's wings (mesh in the common fr3 too)
   ;; keep blocking-plane stuff loaded
   "blocking-plane.o"
   "ef-plane-ag.go"

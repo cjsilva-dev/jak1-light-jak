@@ -535,6 +535,8 @@ target-post
 
 target-standard-event-handler
 
+(define-extern lj-state-exit (function none :behavior target)) ;; LIGHT JAK (engine/mods/light-flight.gc)
+
 (defbehavior target-exit target ()
   (set! (-> self control mod-surface) *walk-mods*)
   (set! (-> self control unknown-vector13 quad) (the-as uint128 0))
@@ -561,6 +563,7 @@ target-standard-event-handler
   (logclear! (-> self draw status) (draw-status hidden))
   (logclear! (-> self skel status) (janim-status spool))
   (logclear! (-> self control status) (cshape-moving-flags t-ceil-sticky))
+  (lj-state-exit) ;; LIGHT JAK: leaving the flight states for anything else ends a flight
   0
   (none))
 
