@@ -352,6 +352,7 @@
   "orb-placer.o" ;; added
   "white-jak.o" ;; WHITE JAK
   "white-flight.o" ;; WHITE JAK FLIGHT
+  "white-wings.o" ;; WHITE JAK WINGS
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
   ;; keep zoomer stuff loaded

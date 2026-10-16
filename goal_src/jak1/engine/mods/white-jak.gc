@@ -35,8 +35,8 @@
 ;; glow added on top of Jak's own lighting (the ending uses 0.5 grey), and a multiplier on the texture colour. The
 ;; white-eco textures + 0.5 grey read "kinda yellow" to Corey (2026-10-15): cut red/green, glow pale blue (Light Jak).
 (define *white-jak-emissive* 0.5)
-(define *white-jak-glow* (new 'static 'vector :x 0.45 :y 0.55 :z 0.75 :w 0.0))
-(define *white-jak-mult* (new 'static 'vector :x 0.8 :y 0.88 :z 1.0 :w 1.0))
+(define *white-jak-glow* (new 'static 'vector :x 0.3 :y 0.42 :z 0.85 :w 0.0))
+(define *white-jak-mult* (new 'static 'vector :x 0.7 :y 0.82 :z 1.35 :w 1.0)) ;; "super golden" with 0.8/0.88/1.0 (Corey)
 
 (deftype white-jak-globals (structure)
   ((handle handle) ;; the puppet. NOT a plain global: Jak 1 symbol values are 32 bits and a handle is 64 (process + pid);
@@ -113,6 +113,67 @@
        (nonzero? (-> *target* draw))
        (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))))
 
+(define *white-jak-white-eyes?* #t) ;; Corey: "his eyes should glow white like jak 3"
+
+;; ---- the glow: the ending's own white-eco aura (sage-finalboss-part.gc parts 2930 / 2929, common "effects"
+;; textures), tinted Light-Jak blue-white, on new ids (parts 3500+, group 1000; the game's top out at 2968 / 708).
+;; The ending's sparkle "pop" function is tied to the boss arena's height, so the sparkles here just rise and fade.
+(defpartgroup group-white-jak-aura
+  :id 1000
+  :duration (seconds 3)
+  :flags (use-local-clock)
+  :bounds (static-bspherem 0 0 0 64)
+  :parts ((sp-item 3500) (sp-item 3502)))
+
+(defpart 3500
+  :init-specs
+  ((:texture (bigpuff effects))
+   (:num 0.4 0.3)
+   (:x (meters -0.001) (meters 0.002))
+   (:y (meters -0.001) (meters 0.002))
+   (:z (meters -0.001) (meters 0.002))
+   (:scale-x (meters 1.2) (meters 0.4))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 170.0 40.0)
+   (:g 200.0 40.0)
+   (:b 255.0)
+   (:a 0.0)
+   (:scalevel-x (meters 0.004))
+   (:rotvel-z (degrees -0.3) (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a 0.16)
+   (:accel-y (meters 0) (meters 0.00033333333))
+   (:timer (seconds 0.6))
+   (:flags (bit2 bit3 bit14))
+   (:next-time (seconds 0.2) (seconds 0.05))
+   (:next-launcher 3501)))
+
+(defpart 3501
+  :init-specs ((:fade-a -0.16)))
+
+(defpart 3502
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 0.5 1.0)
+   (:scale-x (meters 0.08) (meters 0.12))
+   (:scale-y :copy scale-x)
+   (:r 210.0 45.0)
+   (:g 225.0 30.0)
+   (:b 255.0)
+   (:a 48.0 64.0)
+   (:vel-y (meters 0.01) (meters 0.02))
+   (:scalevel-x (meters -0.0005))
+   (:scalevel-y :copy scalevel-x)
+   (:accel-y (meters 0.0005) (meters 0.0005))
+   (:friction 0.9)
+   (:timer (seconds 0.3) (seconds 0.4))
+   (:flags (bit0 bit2 bit3 bit14))
+   (:conerot-x (degrees 0) (degrees 360))
+   (:conerot-y (degrees 0) (degrees 360))))
+
+(define *white-jak-aura?* #t)
+
 (defun white-jak-eyes ((wj white-jak) (jak target))
   "Jak 1 draws eyes into a texture per eye slot (update-eyes, eye.gc), only for a slot whose process has the eye bit and
    was drawn. Jak's merc-eye-anim fills his slot with his eye/blink data, but Jak is not drawn while the puppet stands in
@@ -128,10 +189,18 @@
           (set! (-> dst right data 0 quad) (-> src right data 0 quad))
           (set! (-> dst right data 1 quad) (-> src right data 1 quad))
           (set! (-> dst level) (-> src level)))
+        ;; Light Jak's eyes are glowing white: no iris and no pupil (render-eyes scales them by data 1 x / y)
+        (when *white-jak-white-eyes?*
+          (set! (-> dst left data 1 x) 0.0)
+          (set! (-> dst left data 1 y) 0.0)
+          (set! (-> dst right data 1 x) 0.0)
+          (set! (-> dst right data 1 y) 0.0))
         (set! (-> dst process) (process->handle wj))
         (set! (-> dst shaders) (the-as (inline-array adgif-shader) (-> our-ctrl iris-shader)))
         (logior! (-> wj skel status) (janim-status eye)))))
   (none))
+
+(define-extern white-wings-place (function target none)) ;; WHITE JAK WINGS (white-wings.gc)
 
 (defun white-jak-postbind ((jak target))
   "Called from Jak's postbind (after his joint math, before the draw): copy his pose onto the puppet."
@@ -157,6 +226,7 @@
       (set! (-> wj draw color-mult w) (-> jak draw color-mult w))
       (vector+! (-> wj draw color-emissive) (-> jak draw color-emissive) *white-jak-glow*)
       (set! (-> wj draw color-emissive w) 0.0)))
+  (white-wings-place jak) ;; WHITE JAK WINGS: placed after Jak's joint math too
   0
   (none))
 
@@ -174,7 +244,9 @@
          (set! *white-jak-hidden-proc* (the-as process-drawable #f)))
         ((and (-> self mapped?) (white-jak-active?))
          (logclear! (-> self draw status) (draw-status hidden no-anim no-skeleton-update))
-         (set! *white-jak-hidden-proc* *target*))
+         (set! *white-jak-hidden-proc* *target*)
+         (if (and *white-jak-aura?* (nonzero? (-> self part)))
+           (spawn (-> self part) (process-drawable-random-point! self (new 'stack-no-clear 'vector)))))
         (else
          (logior! (-> self draw status) (draw-status hidden))
          (set! *white-jak-hidden-proc* (the-as process-drawable #f)))))
@@ -192,6 +264,8 @@
   (set! (-> self root) (new 'process 'trsqv))
   (if *target* (set! (-> self root trans quad) (-> *target* root trans quad)))
   (initialize-skeleton self *white-jak-sg* '())
+  ;; group-white-jak-aura: Jak 1 looks part groups up by id
+  (set! (-> self part) (create-launch-control (-> *part-group-id-table* 1000) self))
   (set! (-> self mapped?) #f)
   (format 0 "white-jak: init done, ~D nodes, heap ~D bytes used~%" (-> self node-list length)
           (&- (-> self heap-cur) (-> self heap-base)))

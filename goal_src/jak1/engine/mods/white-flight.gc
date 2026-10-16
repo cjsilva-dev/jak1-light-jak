@@ -14,22 +14,22 @@
 ;; No wings yet (Corey's idea: white Flut Flut wings).
 
 ;; ---- tuning: Dark Jak's numbers from flight-core.gc (Jak II / Jak 3) ----
-(define *wf-flap-impulse*      (meters 17))
-(define *wf-climb-cap*         (meters 24))
-(define *wf-flap-surge*        (meters 10))
-(define *wf-flap-cooldown*     (seconds 0.5))
-(define *wf-gravity*           110592.0)    ;; ~27 m/s^2 while flying (Jak 1 walks at 60)
+(define *wf-flap-impulse*      (meters 12))  ;; Light Jak (True Flight TF-FLAP-IMPULSE); Dark Jak's 17 flew "way up"
+(define *wf-climb-cap*         (meters 20))  ;; Light Jak (TF-CLIMB-CAP)
+(define *wf-flap-surge*        0.0)          ;; Light Jak's flap only lifts (Dark Jak throws 10 m/s forward)
+(define *wf-flap-cooldown*     (seconds 0.35)) ;; Light Jak
+(define *wf-gravity*           81920.0)     ;; ~20 m/s^2, Light Jak (TF-GRAVITY); Jak 1 walks at 60
 (define *wf-gravity-max*       163840.0)
-(define *wf-hold-bonus*        (meters 10))
+(define *wf-hold-bonus*        (meters 10))  ;; flight-core (both games)
 (define *wf-hold-accel*        (meters 25))
-(define *wf-big-flap-impulse*  (meters 28)) ;; flap out of a glide
+(define *wf-big-flap-impulse*  (meters 28)) ;; flap out of a glide (flight-core, both games)
 (define *wf-big-flap-cap*      (meters 35))
-(define *wf-glide-sink*        (meters 5))
-(define *wf-glide-cruise*      (meters 22))
+(define *wf-glide-sink*        (meters 3))   ;; Light Jak
+(define *wf-glide-cruise*      (meters 18))  ;; Light Jak
 (define *wf-glide-max*         (meters 45))
 (define *wf-glide-accel*       (meters 10))
 (define *wf-glide-turbo-accel* (meters 40))
-(define *wf-glide-turbo-max*   (meters 60)) ;; Jak II/3 open-world turbo is 90; Jak 1's levels stream by distance
+(define *wf-glide-turbo-max*   (meters 45)) ;; Jak II/3 open-world turbo is 90; Jak 1's levels stream by distance
 (define *wf-glide-turbo-sink*  (meters 1))
 (define *wf-glide-convert*     0.8)
 (define *wf-glide-catch*       (meters 30))
@@ -37,7 +37,7 @@
 (define *wf-glide-gravity*     49152.0)
 (define *wf-turbo-window*      (seconds 0.5))
 (define *wf-fly-turbo-accel*   (meters 40))
-(define *wf-fly-turbo-max*     (meters 60))
+(define *wf-fly-turbo-max*     (meters 40))
 (define *wf-dash-speed*        (meters 55))
 (define *wf-dash-time*         (seconds 0.3))
 (define *wf-dash-cooldown*     (seconds 0.6))
@@ -53,6 +53,9 @@
 (define *wf-glide-speed* 0.0)
 (define *wf-dash-start*  (the-as time-frame 0))
 (define *wf-body-pitch*  0.0)
+(define *wf-windup*      (seconds 0.1))   ;; Light Jak's flap lands after its wind-up; the fall hangs meanwhile
+(define *wf-windup-damp* 0.95)            ;; per frame, on the vertical speed during the wind-up (Jak 3 swoop-again)
+(define *wf-flap-pending?* #f)
 
 ;; ---- movement surfaces (copies of Jak 1's jump surface, with Dark Flight's handling) ----
 (defun wf-make-surface ((src surface) (name symbol) (turnv float) (speed float) (target float) (seek float) (fric float))
@@ -68,7 +71,7 @@
     (set! (-> m flags) (surface-flags jump)) ;; no ledge grabs mid-flight
     m))
 
-(define *wf-fly-mods*      (wf-make-surface *jump-mods* 'white-fly 163840.0 106496.0 106496.0 0.3 0.2))
+(define *wf-fly-mods*      (wf-make-surface *jump-mods* 'white-fly 131072.0 81920.0 81920.0 0.3 0.2)) ;; Light Jak's swoop: 20 m/s
 (define *wf-fly-fast-mods* (wf-make-surface *jump-mods* 'white-fly-fast 131072.0 368640.0 368640.0 0.3 0.2))
 (define *wf-glide-mods*    (wf-make-surface *jump-mods* 'white-glide 98304.0 409600.0 184320.0 0.05 0.05))
 (define *wf-dash-mods*     (wf-make-surface *jump-mods* 'white-dash 131072.0 368640.0 368640.0 0.0 0.0))
@@ -223,11 +226,21 @@
          (set-time! *wf-flap-time*)
          (set! *wf-from-glide?* *wf-gliding?*)
          (wf-takeoff!)
-         (wf-flap-lift)
-         (effect-control-method-10 (-> self skel effect) 'jump-double (the-as float -1.0) -1) ;; the double jump's puff + sound
-         (set! *wf-from-glide?* #f)
-         (set! *wf-holding?* #t)
-         (set! *wf-hold-given* 0.0)))
+         (set! *wf-flap-pending?* #t) ;; the lift lands after the wind-up
+         (effect-control-method-10 (-> self skel effect) 'jump-double (the-as float -1.0) -1))) ;; the double jump's puff + sound
+     ;; the wind-up: hang, then the beat
+     (when *wf-flap-pending?*
+       (cond
+         ((time-elapsed? *wf-flap-time* *wf-windup*)
+          (set! *wf-flap-pending?* #f)
+          (wf-flap-lift)
+          (set! *wf-from-glide?* #f)
+          (set! *wf-holding?* #t)
+          (set! *wf-hold-given* 0.0))
+         (else
+          (let* ((up (-> self control dynam gravity-normal))
+                 (vs (vector-dot up (-> self control transv))))
+            (vector+float*! (-> self control transv) (-> self control transv) up (- (* *wf-windup-damp* vs) vs))))))
      (wf-hold-tick)
      (if (cpad-hold? (-> self control cpad number) l1) (wf-takeoff!))
      (when *wf-flying?*
@@ -235,10 +248,9 @@
        (vector-copy! (-> self control last-trans-any-surf) (-> self control trans))
        (set! (-> self control dynam gravity-length) *wf-gravity*)
        (set! (-> self control dynam gravity-max) *wf-gravity-max*)
+       ;; Light Jak: R1 held while flapping flies fast
        (set! (-> self control mod-surface)
-             (if (and (cpad-hold? (-> self control cpad number) r1) (not (time-elapsed? *wf-flap-time* *wf-turbo-window*)))
-               *wf-fly-fast-mods*
-               *wf-fly-mods*))
+             (if (cpad-hold? (-> self control cpad number) r1) *wf-fly-fast-mods* *wf-fly-mods*))
        (wf-dash)
        (if (wf-turbo-on?)
          (wf-horizontal-push (fmin *wf-fly-turbo-max* (+ (wf-horizontal-speed) (* *wf-fly-turbo-accel* (seconds-per-frame))))))
@@ -255,3 +267,81 @@
                           '(target-jump target-jump-forward target-double-jump target-high-jump target-falling))))
       (wf-land! *target*)))
   (none))
+
+;; ---- the flight camera (Corey: "the camera is beneath jak when he flies") ----
+;; Jak 1's string camera keeps its height off the ground under Jak, so in flight it sat below him looking up. While
+;; he flies this chase camera replaces the view in update-camera (*wf-cam-hook*, cam-update.gc): it hangs behind and
+;; above him, follows like a string (so turning doesn't spin it), swings in behind his flight path when he moves fast,
+;; and blends in from / back out to the game camera. Steering reads the same view, so the stick stays screen-relative.
+(define *wf-cam-dist*         (meters 8))
+(define *wf-cam-height*       (meters 3))
+(define *wf-cam-glide-dist*   (meters 10))
+(define *wf-cam-glide-height* (meters 4))
+(define *wf-cam-look-up*      (meters 1.2)) ;; looks at this point above Jak's feet
+(define *wf-cam-follow*       6.0)          ;; per second, toward the wanted position
+(define *wf-cam-swing*        1.5)          ;; per second, behind the flight path (above 8 m/s)
+(define *wf-cam-blend-in*     3.0)          ;; per second
+(define *wf-cam-blend-out*    2.0)
+(define *wf-cam-blend*        0.0)
+(define *wf-cam-pos*          (new 'static 'vector :w 1.0))
+
+(defun wf-camera ()
+  (let ((jak *target*)
+        (want (if (and *wf-flying?* (white-jak-active?)) 1.0 0.0))
+        (dt (seconds-per-frame)))
+    (when (and jak (not (paused?)))
+      (if (and (= *wf-cam-blend* 0.0) (< 0.0 want)) (set! (-> *wf-cam-pos* quad) (-> *math-camera* trans quad)))
+      (set! *wf-cam-blend* (if (< *wf-cam-blend* want)
+                             (fmin want (+ *wf-cam-blend* (* *wf-cam-blend-in* dt)))
+                             (fmax want (- *wf-cam-blend* (* *wf-cam-blend-out* dt)))))
+      (when (< 0.0 *wf-cam-blend*)
+        (let ((tgt (new 'stack-no-clear 'vector))
+              (dir (new 'stack-no-clear 'vector))
+              (want-pos (new 'stack-no-clear 'vector))
+              (fwd (new 'stack-no-clear 'vector))
+              (right (new 'stack-no-clear 'vector))
+              (up (new 'stack-no-clear 'vector))
+              (world-up (new 'static 'vector :y 1.0 :w 1.0))
+              (gp (new 'stack-no-clear 'vector))
+              (gf (new 'stack-no-clear 'vector)))
+          (set! (-> tgt quad) (-> jak control trans quad))
+          (+! (-> tgt y) *wf-cam-look-up*)
+          ;; string follow: keep the current heading from the camera to Jak
+          (vector-! dir tgt *wf-cam-pos*)
+          (set! (-> dir y) 0.0)
+          (if (< (vector-length dir) (meters 0.5)) (vector-z-quaternion! dir (-> jak control quat)))
+          (set! (-> dir y) 0.0)
+          (vector-normalize! dir 1.0)
+          ;; swing in behind the flight path when moving fast
+          (let* ((v (-> jak control transv))
+                 (hs (sqrtf (+ (* (-> v x) (-> v x)) (* (-> v z) (-> v z))))))
+            (when (< (meters 8) hs)
+              (set-vector! gf (/ (-> v x) hs) 0.0 (/ (-> v z) hs) 1.0)
+              (vector-lerp! dir dir gf (fmin 1.0 (* *wf-cam-swing* dt)))
+              (vector-normalize! dir 1.0)))
+          (vector+float*! want-pos tgt dir (- (if *wf-gliding?* *wf-cam-glide-dist* *wf-cam-dist*)))
+          (+! (-> want-pos y) (if *wf-gliding?* *wf-cam-glide-height* *wf-cam-height*))
+          (vector-lerp! *wf-cam-pos* *wf-cam-pos* want-pos (fmin 1.0 (* *wf-cam-follow* dt)))
+          (set! (-> *wf-cam-pos* w) 1.0)
+          ;; blend position and facing with the game camera's
+          (vector-lerp! gp (-> *math-camera* trans) *wf-cam-pos* *wf-cam-blend*)
+          (vector-! fwd tgt *wf-cam-pos*)
+          (vector-normalize! fwd 1.0)
+          (vector-lerp! fwd (-> *math-camera* inv-camera-rot vector 2) fwd *wf-cam-blend*)
+          (vector-normalize! fwd 1.0)
+          (vector-cross! right world-up fwd)
+          (vector-normalize! right 1.0)
+          (vector-cross! up fwd right)
+          (vector-normalize! up 1.0)
+          (set! (-> *math-camera* trans quad) (-> gp quad))
+          (set! (-> *math-camera* trans w) 1.0)
+          (set! (-> *math-camera* inv-camera-rot vector 0 quad) (-> right quad))
+          (set! (-> *math-camera* inv-camera-rot vector 1 quad) (-> up quad))
+          (set! (-> *math-camera* inv-camera-rot vector 2 quad) (-> fwd quad))
+          (set! (-> *math-camera* inv-camera-rot vector 0 w) 0.0)
+          (set! (-> *math-camera* inv-camera-rot vector 1 w) 0.0)
+          (set! (-> *math-camera* inv-camera-rot vector 2 w) 0.0)
+          (set-vector! (-> *math-camera* inv-camera-rot vector 3) 0.0 0.0 0.0 1.0)))))
+  (none))
+
+(set! *wf-cam-hook* wf-camera)

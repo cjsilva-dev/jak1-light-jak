@@ -1,0 +1,172 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: white-wings.gc
+;; name in dgo: white-wings
+;; dgos: GAME
+
+;; WHITE JAK WINGS (prototype, 2026-10-15): white Flut Flut wings on White Jak while he flies (white-flight.gc).
+;; The Flut Flut (flut-saddle-ag, already in GAME.CGO and the common fr3) is one whole-body model, so this is Dark
+;; Flight's "Dark Angel" trick: the whole bird rides on Jak's back with every bone except the wing chains
+;; (l/rShoulder, l/rWing1, l/rWing2, l/rWingF2) shrunk into a tiny lump at its chest. Like the White Jak puppet, it
+;; never runs its own ja-post: from Jak's postbind (after his joint math) white-wings-place evaluates its animation
+;; and joint math with the bird at the origin, then re-bases every bone onto Jak's chest.
+
+(defskelgroup *white-wings-sg*
+  flut-saddle
+  flut-saddle-lod0-jg
+  flut-saddle-flut-jump-loop-ja
+  ((flut-saddle-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 5))
+
+;; ---- tuning (live from the REPL) ----
+(define *ww-scale*   0.6)   ;; the bird's size on Jak
+(define *ww-shrink*  0.15)  ;; body bones shrink to this (Dark Flight: much smaller and the renderer blows up)
+(define *ww-up*      (meters -0.1)) ;; wing anchor: along Jak's up from his chest bone
+(define *ww-back*    (meters 0.25)) ;; ... and behind it
+(define *ww-flap-fps* 45.0)         ;; double-jump flap playback per flap
+(define *ww-glide-frame* 0.4)       ;; share of the flap animation held while gliding (wings spread)
+(define *ww-on?*     #t)
+
+(deftype white-wings-globals (structure)
+  ((handle handle)   ;; in a structure: Jak 1 symbol values are 32 bits, a handle 64 (white-jak.gc)
+   (retry  int32)))
+
+(define *white-wings* (new 'static 'white-wings-globals))
+(set! (-> *white-wings* handle) (the-as handle #f))
+(set! (-> *white-wings* retry) 0)
+
+(deftype white-wings (process-drawable)
+  ((keep        int8 64)  ;; per node: 1 = a wing bone (kept), 0 = body (shrunk)
+   (chest-node  int32)
+   (mapped?     symbol))
+  (:states
+   white-wings-idle))
+
+(defun ww-prefix? ((s string) (p string))
+  "Does S start with P? (Jak 1 has no prefix test for strings.)"
+  (let ((n (length p))
+        (ok #t))
+    (if (< (length s) n)
+      (set! ok #f)
+      (dotimes (i n)
+        (if (!= (-> s data i) (-> p data i)) (set! ok #f))))
+    ok))
+
+(defbehavior white-wings-map white-wings ()
+  (let ((nl (-> self node-list))
+        (kept 0))
+    (set! (-> self chest-node) 0)
+    (dotimes (i (min 64 (-> nl length)))
+      (set! (-> self keep i) 0)
+      (let ((jt (-> nl data i joint)))
+        (when jt
+          (let ((nm (-> jt name)))
+            (if (string= nm "chest") (set! (-> self chest-node) i))
+            (when (or (ww-prefix? nm "lWing") (ww-prefix? nm "rWing")
+                      (string= nm "lShoulder") (string= nm "rShoulder"))
+              (set! (-> self keep i) 1)
+              (+! kept 1))))))
+    (format 0 "white-wings: ~D nodes, ~D wing bones, chest node ~D~%" (-> nl length) kept (-> self chest-node)))
+  (set! (-> self mapped?) #t)
+  (none))
+
+(defun white-wings-show? ()
+  (and *ww-on?* *wf-flying?* (white-jak-active?)))
+
+(defun white-wings-place ((jak target))
+  "From Jak's postbind: animate the bird at the origin, then move every bone onto Jak's back (wing bones at
+   *ww-scale*, body bones shrunk into the anchor)."
+  (let ((ww (the-as white-wings (handle->process (-> *white-wings* handle)))))
+    (when (and ww (-> ww mapped?) (white-wings-show?))
+      (logclear! (-> ww draw status) (draw-status hidden no-anim no-skeleton-update))
+      ;; the bird's own pose, at the origin, upright
+      (vector-reset! (-> ww root trans))
+      (quaternion-identity! (-> ww root quat))
+      (evaluate-joint-control ww)
+      (do-joint-math! ww)
+      ;; the anchor: Jak's chest + offsets, Jak's facing (+ the glide lean), the bird's scale
+      (let* ((jq (-> jak control quat))
+             (up (vector-y-quaternion! (new 'stack-no-clear 'vector) jq))
+             (fwd (vector-z-quaternion! (new 'stack-no-clear 'vector) jq))
+             (tq (new 'stack-no-clear 'transformq))
+             (anchor (new 'stack-no-clear 'matrix))
+             (m (new 'stack-no-clear 'matrix))
+             (chest (new 'stack-no-clear 'vector)))
+        (set! (-> tq trans quad) (-> jak node-list data 5 bone transform vector 3 quad)) ;; Jak's chest bone
+        (vector+float*! (-> tq trans) (-> tq trans) up *ww-up*)
+        (vector+float*! (-> tq trans) (-> tq trans) fwd (- *ww-back*))
+        (set! (-> tq trans w) 1.0)
+        (let ((lean (quaternion-axis-angle! (new 'stack-no-clear 'quaternion) 1.0 0.0 0.0 (degrees *wf-body-pitch*))))
+          (quaternion*! (-> tq quat) jq lean))
+        (set-vector! (-> tq scale) *ww-scale* *ww-scale* *ww-scale* 1.0)
+        (matrix<-transformq! anchor tq)
+        (set! (-> chest quad) (-> ww node-list data (-> ww chest-node) bone transform vector 3 quad))
+        (dotimes (i (min 64 (-> ww node-list length)))
+          (let ((b (-> ww node-list data i bone)))
+            (matrix-copy! m (-> b transform))
+            (cond
+              ((= (-> ww keep i) 1)
+               ;; relative to the bird's chest
+               (vector-! (-> m vector 3) (-> m vector 3) chest)
+               (set! (-> m vector 3 w) 1.0))
+              (else
+               ;; body: shrink in place and collapse onto the anchor
+               (vector-float*! (-> m vector 0) (-> m vector 0) *ww-shrink*)
+               (vector-float*! (-> m vector 1) (-> m vector 1) *ww-shrink*)
+               (vector-float*! (-> m vector 2) (-> m vector 2) *ww-shrink*)
+               (set-vector! (-> m vector 3) 0.0 0.0 0.0 1.0)))
+            (matrix*! (-> b transform) m anchor)))
+        (set! (-> ww root trans quad) (-> tq trans quad))
+        (set! (-> ww draw origin quad) (-> tq trans quad))
+        (set! (-> ww draw light-index) (-> jak draw light-index))
+        (vector*! (-> ww draw color-mult) (-> jak draw color-mult) *white-jak-mult*)
+        (set! (-> ww draw color-mult w) (-> jak draw color-mult w))
+        (vector+! (-> ww draw color-emissive) (-> jak draw color-emissive) *white-jak-glow*)
+        (set! (-> ww draw color-emissive w) 0.0))))
+  0
+  (none))
+
+(defstate white-wings-idle (white-wings)
+  :trans
+    (behavior ()
+      (if (not (-> self mapped?)) (white-wings-map))
+      (if (not (white-wings-show?)) (logior! (-> self draw status) (draw-status hidden))))
+  :code
+    (behavior ()
+      (ja-channel-set! 1)
+      (ja :group! flut-saddle-flut-jump-loop-ja :num! min)
+      (loop
+        ;; the pose (evaluated by white-wings-place): a flap plays the Flut Flut's double-jump beat, a glide holds
+        ;; its wings spread, otherwise its jump loop
+        (let ((since (- (current-time) *wf-flap-time*))
+              (beat (the-as art-joint-anim flut-saddle-flut-double-jump-ja)))
+          (cond
+            ((< since (seconds 0.6))
+             (ja :group! beat
+                 :num! (identity (fmin (the float (+ -1 (-> beat data 0 length)))
+                                       (* *ww-flap-fps* (/ (the float since) (the float (seconds 1))))))))
+            (*wf-gliding?*
+             (ja :group! beat :num! (identity (* *ww-glide-frame* (the float (+ -1 (-> beat data 0 length)))))))
+            (else (ja :group! flut-saddle-flut-jump-loop-ja :num! (loop!)))))
+        (suspend))))
+
+(defbehavior white-wings-init-by-other white-wings ()
+  (set! (-> self root) (new 'process 'trsqv))
+  (initialize-skeleton self *white-wings-sg* '())
+  (set! (-> self mapped?) #f)
+  (logior! (-> self draw status) (draw-status hidden))
+  (go white-wings-idle)
+  (none))
+
+(defun white-wings-maintenance ()
+  "Every frame: keep one wings process alive under Jak (spawn at most once a second)."
+  (when (and *target* (not (handle->process (-> *white-wings* handle))))
+    (cond
+      ((> (-> *white-wings* retry) 0) (+! (-> *white-wings* retry) -1))
+      (else
+       (set! (-> *white-wings* retry) 60)
+       (let ((p (process-spawn white-wings :to *target*)))
+         (format 0 "white-wings: spawn ~A~%" (if p (-> p 0) #f))
+         (if p (set! (-> *white-wings* handle) (ppointer->handle p)))))))
+  (none))

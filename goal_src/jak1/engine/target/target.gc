@@ -80,8 +80,7 @@
   0
   (none))
 
-;; WHITE JAK FLIGHT (engine/mods/white-flight.gc): set while White Jak flies; turns the "stuck" auto-landing off
-(define *wf-flying?* #f)
+;; WHITE JAK FLIGHT (engine/mods/white-flight.gc): *wf-flying?* (defined in cam-master.gc) turns the "stuck" auto-landing off
 (define-extern white-flight-air (function none :behavior target))
 
 (defbehavior target-falling-trans target ((arg0 basic) (arg1 time-frame))
