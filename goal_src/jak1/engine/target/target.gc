@@ -82,6 +82,8 @@
 
 ;; WHITE JAK FLIGHT (engine/mods/white-flight.gc): *wf-flying?* (defined in cam-master.gc) turns the "stuck" auto-landing off
 (define-extern white-flight-air (function none :behavior target))
+(define-extern white-flight-slam-tick (function none :behavior target))
+(define-extern white-flight-slam-land (function none :behavior target))
 
 (defbehavior target-falling-trans target ((arg0 basic) (arg1 time-frame))
   (if (and (cpad-pressed? (-> self control cpad number) circle) (can-feet?)) (go target-attack-air #f))
@@ -1628,6 +1630,7 @@
       (set! (-> self control dynam gravity quad) (-> self control standard-dynamics gravity quad)))
   :trans
     (behavior ()
+      (white-flight-slam-tick) ;; WHITE JAK FLIGHT: superhero landing plunge
       (delete-back-vel)
       (let ((gp-1 (logtest? (-> self control status) (cshape-moving-flags onsurf))))
         (when (and (not gp-1) (let ((v1-6 (ja-group))) (or (= v1-6 eichar-flop-down-loop-ja) (= v1-6 eichar-moving-flop-down-ja))))
@@ -1754,7 +1757,8 @@
       (set-forward-vel (the-as float 0.0))
       (set! (-> self control mod-surface) *flop-land-mods*)
       (logclear! (-> *flop-land-mods* flags) (surface-flags allow-edge-grab))
-      (logior! (-> self state-flags) (state-flags flop-hit-ground)))
+      (logior! (-> self state-flags) (state-flags flop-hit-ground))
+      (white-flight-slam-land)) ;; WHITE JAK FLIGHT: superhero landing impact
   :exit target-exit
   :trans
     (behavior ()

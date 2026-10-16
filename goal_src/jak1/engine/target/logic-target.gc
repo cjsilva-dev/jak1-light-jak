@@ -967,7 +967,10 @@
   (target-powerup-process)
   (none))
 
+(define-extern white-flight-pose (function none :behavior target)) ;; WHITE JAK FLIGHT (engine/mods/white-flight.gc)
+
 (defbehavior target-post target ()
+  (white-flight-pose) ;; WHITE JAK FLIGHT: the flying pose, set before the animation is evaluated
   (target-real-post)
   (none))
 

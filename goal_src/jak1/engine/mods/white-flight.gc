@@ -42,7 +42,15 @@
 (define *wf-dash-time*         (seconds 0.3))
 (define *wf-dash-cooldown*     (seconds 0.6))
 (define *wf-glide-pitch*       60.0)        ;; degrees forward while gliding (the Superman lean, on his main bone)
-(define *wf-pitch-step*        8.0)         ;; degrees per frame toward it
+(define *wf-pitch-step*        3.0)         ;; degrees per frame toward it (8 snapped into the glide)
+
+;; ---- superhero landing (Square in flight) ----
+(define *wf-slam?*          #f)
+(define *wf-slam-started?*  #f)
+(define *wf-slam-speed*     (meters 20))  ;; the plunge starts at least this fast (True Flight)
+(define *wf-slam-max*       245760.0)     ;; 60 m/s, Jak 1's ground pound gravity cap
+(define *wf-slam-boost-max* 409600.0)     ;; 100 m/s while Square is held
+(define *wf-slam-blast*     (meters 9))   ;; the strike's reach (red eco's is 7)
 
 ;; ---- state ----
 (define *wf-flap-time*   (the-as time-frame 0))
@@ -254,7 +262,13 @@
        (wf-dash)
        (if (wf-turbo-on?)
          (wf-horizontal-push (fmin *wf-fly-turbo-max* (+ (wf-horizontal-speed) (* *wf-fly-turbo-accel* (seconds-per-frame))))))
-       (if (cpad-hold? (-> self control cpad number) l1) (wf-glide) (set! *wf-gliding?* #f))))
+       (if (cpad-hold? (-> self control cpad number) l1) (wf-glide) (set! *wf-gliding?* #f))
+       ;; Square = the superhero landing: Jak 1's ground pound, plunging hard from the air (white-flight-slam-tick)
+       (when (cpad-pressed? (-> self control cpad number) square)
+         (logclear! (-> *cpad-list* cpads (-> self control cpad number) button0-rel 0) (pad-buttons square))
+         (set! *wf-slam?* #t)
+         (set! *wf-slam-started?* #f)
+         (go target-flop (the-as float 0.0) (the-as float 0.0) (the-as float 0.0)))))
     (else (wf-land! self)))
   (none))
 
@@ -345,3 +359,76 @@
   (none))
 
 (set! *wf-cam-hook* wf-camera)
+
+;; ---- the flying pose (Corey: "the animations when flapping are the same the whole time ... use all the frames of
+;; jak's jump up and fall down"). Dark Flight's approach: in target-post (logic-target.gc), before the animation is
+;; evaluated, hold Jak's jump animation (eichar-jump-ja) at a frame that follows his vertical speed -- the rising
+;; frames while he climbs, the crest at the apex, the falling frames as he sinks -- easing toward it, with a kick back
+;; to the jump's wind-up on every flap, and an eased move to a glide frame (plus the lean) while gliding.
+(define *wf-pose-up*      8.0)  ;; aframe while climbing hard (the jump's push-off)
+(define *wf-pose-apex*    20.0) ;; at the top (the jump code's own apex aframe)
+(define *wf-pose-down*    33.0) ;; sinking fast (before the landing frames, 38+)
+(define *wf-pose-kick*    4.0)  ;; a flap snaps back to the wind-up
+(define *wf-pose-glide*   29.0) ;; gliding (with the lean)
+(define *wf-pose-range*   (meters 12)) ;; vertical speed for the full up/down pose
+(define *wf-pose-rate*    30.0) ;; aframes per second the pose eases
+(define *wf-pose-kick-rate* 70.0) ;; ... right after a flap (the beat plays through quickly)
+(define *wf-pose-cur*     20.0)
+
+(defbehavior white-flight-pose target ()
+  (when (and *wf-flying?*
+             (member (-> self state name) '(target-jump target-jump-forward target-double-jump target-high-jump target-falling)))
+    (let* ((vs (-> self control transv y))
+           (since (- (current-time) *wf-flap-time*))
+           (want (cond
+                   (*wf-gliding?* *wf-pose-glide*)
+                   ((< 0.0 vs) (lerp *wf-pose-apex* *wf-pose-up* (fmin 1.0 (/ vs *wf-pose-range*))))
+                   (else (lerp *wf-pose-apex* *wf-pose-down* (fmin 1.0 (/ (- vs) *wf-pose-range*))))))
+           (rate (if (< since (seconds 0.4)) *wf-pose-kick-rate* *wf-pose-rate*)))
+      (if (< since (seconds 0.04)) (set! *wf-pose-cur* *wf-pose-kick*)) ;; the flap's wind-up
+      (let ((step (* rate (seconds-per-frame))))
+        (set! *wf-pose-cur* (if (< *wf-pose-cur* want) (fmin want (+ *wf-pose-cur* step)) (fmax want (- *wf-pose-cur* step)))))
+      (if (< 1 (-> self skel active-channels)) (ja-channel-set! 1))
+      (ja :group! eichar-jump-ja :num! (identity (ja-aframe *wf-pose-cur* 0)))))
+  (none))
+
+(defbehavior white-flight-slam-tick target ()
+  "From target-flop's :trans: a ground pound out of flight plunges straight down at least *wf-slam-speed* (the flop
+   starts with a hop), faster while Square is held, and is never a hard landing."
+  (when *wf-slam?*
+    (when (not *wf-slam-started?*)
+      (set! *wf-slam-started?* #t)
+      (set! (-> self control transv y) (fmin (-> self control transv y) (- *wf-slam-speed*))))
+    (set! (-> self control dynam gravity-max)
+          (if (cpad-hold? (-> self control cpad number) square) *wf-slam-boost-max* *wf-slam-max*))
+    ;; the ground pound gives up after *TARGET-bank* fall-timeout and drops into a plain fall: a dive from up high
+    ;; outlasted it (2026-10-15), so its clock restarts every frame of the dive
+    (set-time! (-> self state-time))
+    ;; the landing measures the drop from highest-jump-mark: keep it under him
+    (set! (-> self control highest-jump-mark quad) (-> self control trans quad))
+    (vector-copy! (-> self control last-trans-any-surf) (-> self control trans)))
+  (none))
+
+(defbehavior white-flight-slam-land target ()
+  "From target-flop-hit-ground's :enter: the superhero landing's impact -- red eco's ground strike (an attack ring
+   that grows out from him), a camera shake, a hard rumble, and a burst of the white aura."
+  (when *wf-slam?*
+    (set! *wf-slam?* #f)
+    (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 255 (seconds 0.5))
+    (activate! *camera-smush-control* (the-as float 1638.4) 37 600 (the-as float 1.0) (the-as float 0.995))
+    (effect-control-method-10 (-> self skel effect) 'group-red-eco-strike-ground (ja-frame-num 0) 0)
+    (let ((tt (process-spawn touch-tracker :init touch-tracker-init (-> self control trans) 4096.0 30 :to self)))
+      (send-event (ppointer->process tt) 'event 'attack 'flop)
+      (send-event (ppointer->process tt)
+                  'function
+                  (lambda ((arg0 target))
+                    (let ((f0-3 (seek (-> arg0 control root-prim local-sphere w)
+                                      *wf-slam-blast*
+                                      (* 286720.0 DISPLAY_FPS_RATIO 0.016666668))))
+                      (set! (-> arg0 control root-prim local-sphere w) f0-3)
+                      f0-3))))
+    (dotimes (i 40)
+      (launch-particles (-> *part-id-table* 3500) (process-drawable-random-point! self (new 'stack-no-clear 'vector))))
+    (dotimes (i 30)
+      (launch-particles (-> *part-id-table* 3502) (process-drawable-random-point! self (new 'stack-no-clear 'vector)))))
+  (none))
