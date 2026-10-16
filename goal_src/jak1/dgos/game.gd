@@ -372,6 +372,7 @@
   "flut-saddle-ag.go"
   "eichar-flut+0-ag.go"
   "jak-white-ag.go" ;; WHITE JAK: the final boss's white Jak (mesh in the common fr3: jak1_config.jsonc common_art_groups)
+  "pelican-ag.go" ;; WHITE JAK WINGS: the Sentinel Beach pelican's wings (mesh in the common fr3 too)
   ;; keep blocking-plane stuff loaded
   "blocking-plane.o"
   "ef-plane-ag.go"

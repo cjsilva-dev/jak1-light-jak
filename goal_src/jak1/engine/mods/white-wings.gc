@@ -12,15 +12,17 @@
 ;; never runs its own ja-post: from Jak's postbind (after his joint math) white-wings-place evaluates its animation
 ;; and joint math with the bird at the origin, then re-bases every bone onto Jak's chest.
 
+;; 2026-10-15 evening: the Flut Flut's wings read "not angelic" to Corey and stayed blue (its textures resisted a
+;; replacement); the Sentinel Beach pelican is white, has big soaring wings and real fly / glide / swoop loops.
 (defskelgroup *white-wings-sg*
-  flut-saddle
-  flut-saddle-lod0-jg
-  flut-saddle-flut-jump-loop-ja
-  ((flut-saddle-lod0-mg (meters 999999)))
-  :bounds (static-spherem 0 0 0 5))
+  pelican
+  pelican-lod0-jg
+  pelican-fly-ja
+  ((pelican-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 6))
 
 ;; ---- tuning (live from the REPL) ----
-(define *ww-scale*   0.95)  ;; the bird's size on Jak (0.6 read as tiny blue stubs)
+(define *ww-scale*   0.55)  ;; the pelican's size on Jak
 (define *ww-shrink*  0.15)  ;; body bones shrink to this (Dark Flight: much smaller and the renderer blows up)
 (define *ww-up*      (meters 0.15)) ;; wing anchor: along Jak's up from his chest bone
 (define *ww-back*    (meters 0.25)) ;; ... and behind it
@@ -31,9 +33,9 @@
 ;; the glow and multiplier only scale the texture's colour (0.15 / 1.0 still drew deep blue), so the wings are white
 ;; through texture replacements (custom_assets/jak1/texture_replacements/snow-vis-pris, whiten-flut.py, made from the
 ;; player's own extract and never committed); these just make them glow like Jak
-(define *ww-glow* (new 'static 'vector :x 0.45 :y 0.5 :z 0.6 :w 0.0))
+(define *ww-glow* (new 'static 'vector :x 0.35 :y 0.4 :z 0.5 :w 0.0))
 (define *ww-mult* (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0))
-(define *ww-beat-fps*  30.0) ;; the flap cycle while flying (looped through the Flut Flut's flap)
+(define *ww-beat-fps*  30.0) ;; the pelican's fly loop between flaps (frames per second)
 (define *ww-glide-sway* 0.08) ;; while gliding: a slow sway around the spread frame (share of the flap)
 (define *ww-beat* 0.0)       ;; position in the flap cycle, frames
 ;; DEBUG: 0 = normal; 1 = the whole bird as its joint math made it, at Jak (no shrink, no move); 2 = shrink only
@@ -76,8 +78,8 @@
         (when jt
           (let ((nm (-> jt name)))
             (if (string= nm "chest") (set! (-> self chest-node) i))
-            (when (or (ww-prefix? nm "lWing") (ww-prefix? nm "rWing")
-                      (string= nm "lShoulder") (string= nm "rShoulder"))
+            (when (or (string= nm "lShoulder") (string= nm "lElbow") (ww-prefix? nm "lHand")
+                      (string= nm "rShoulder") (string= nm "rElbow") (ww-prefix? nm "rHand"))
               (set! (-> self keep i) 1)
               (+! kept 1))))))
     (format 0 "white-wings: ~D nodes, ~D wing bones, chest node ~D~%" (-> nl length) kept (-> self chest-node)))
@@ -175,25 +177,18 @@
   :code
     (behavior ()
       (ja-channel-set! 1)
-      (ja :group! flut-saddle-flut-jump-loop-ja :num! min)
+      (ja :group! pelican-fly-ja :num! min)
       (loop
-        ;; Corey: one fast flap then frozen looked rough. Now the wings beat all the time while he flies: a flap press
-        ;; restarts the beat (fast), between presses it keeps cycling slower, and a glide sways gently around spread.
+        ;; the pelican's own loops: its fly loop while Jak flaps (a flap press restarts the beat and plays it faster for
+        ;; a moment), its glide loop while he glides
         (let* ((since (- (current-time) *wf-flap-time*))
-               (beat (the-as art-joint-anim flut-saddle-flut-double-jump-ja))
-               (n (the float (+ -1 (-> beat data 0 length))))
+               (anim (the-as art-joint-anim (if *wf-gliding?* pelican-glide-ja pelican-fly-ja)))
+               (n (the float (+ -1 (-> anim data 0 length))))
                (dt (seconds-per-frame)))
-          (cond
-            (*wf-gliding?*
-             (set! *ww-beat* 0.0)
-             (ja :group! beat
-                 :num! (identity (* n (+ *ww-glide-frame*
-                                         (* *ww-glide-sway* (sin (* 182.04445 120.0 (/ (the float (current-time)) 300.0)))))))))
-            (else
-             (if (< since (seconds 0.04)) (set! *ww-beat* 0.0))
-             (set! *ww-beat* (+ *ww-beat* (* dt (if (< since (seconds 0.5)) *ww-flap-fps* *ww-beat-fps*))))
-             (if (>= *ww-beat* n) (set! *ww-beat* (- *ww-beat* n)))
-             (ja :group! beat :num! (identity *ww-beat*)))))
+          (if (< since (seconds 0.04)) (set! *ww-beat* 0.0))
+          (set! *ww-beat* (+ *ww-beat* (* dt (if (and (not *wf-gliding?*) (< since (seconds 0.5))) *ww-flap-fps* *ww-beat-fps*))))
+          (if (>= *ww-beat* n) (set! *ww-beat* (- *ww-beat* (* n (the float (the int (/ *ww-beat* n)))))))
+          (ja :group! anim :num! (identity *ww-beat*)))
         (suspend))))
 
 (defbehavior white-wings-init-by-other white-wings ()
