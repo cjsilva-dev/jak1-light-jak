@@ -20,13 +20,20 @@
   :bounds (static-spherem 0 0 0 5))
 
 ;; ---- tuning (live from the REPL) ----
-(define *ww-scale*   0.6)   ;; the bird's size on Jak
+(define *ww-scale*   0.95)  ;; the bird's size on Jak (0.6 read as tiny blue stubs)
 (define *ww-shrink*  0.15)  ;; body bones shrink to this (Dark Flight: much smaller and the renderer blows up)
-(define *ww-up*      (meters -0.1)) ;; wing anchor: along Jak's up from his chest bone
+(define *ww-up*      (meters 0.15)) ;; wing anchor: along Jak's up from his chest bone
 (define *ww-back*    (meters 0.25)) ;; ... and behind it
 (define *ww-flap-fps* 45.0)         ;; double-jump flap playback per flap
 (define *ww-glide-frame* 0.4)       ;; share of the flap animation held while gliding (wings spread)
 (define *ww-on?*     #t)
+;; the Flut Flut's wings are blue: a near-white glow and a strong multiplier wash them white (Light Jak's wings)
+(define *ww-glow* (new 'static 'vector :x 0.85 :y 0.9 :z 1.0 :w 0.0))
+(define *ww-mult* (new 'static 'vector :x 1.4 :y 1.4 :z 1.5 :w 1.0))
+;; DEBUG: 0 = normal; 1 = the whole bird as its joint math made it, at Jak (no shrink, no move); 2 = shrink only
+(define *ww-mode*    0)
+(define *ww-dump-now* #f) ;; DEBUG: dump the anchor and some bones from inside the next placement
+(define *ww-loop*    3) ;; DEBUG: which bones the placement writes: 0 none, 1 wings only, 2 body only, 3 all
 
 (deftype white-wings-globals (structure)
   ((handle handle)   ;; in a structure: Jak 1 symbol values are 32 bits, a handle 64 (white-jak.gc)
@@ -80,11 +87,21 @@
   (let ((ww (the-as white-wings (handle->process (-> *white-wings* handle)))))
     (when (and ww (-> ww mapped?) (white-wings-show?))
       (logclear! (-> ww draw status) (draw-status hidden no-anim no-skeleton-update))
-      ;; the bird's own pose, at the origin, upright
-      (vector-reset! (-> ww root trans))
-      (quaternion-identity! (-> ww root quat))
+      ;; the bird's own pose, at the origin, upright (mode 1: at Jak, facing his way, and left as it is)
+      (cond
+        ((= *ww-mode* 1)
+         (set! (-> ww root trans quad) (-> jak control trans quad))
+         (quaternion-copy! (-> ww root quat) (-> jak control quat)))
+        (else
+         ;; NOT vector-reset!: that zeroes w too, and Jak 1's bone matrices carry a scale in the translation's w
+         ;; (scale-joints divides by it) -- w = 0 sent every vertex to infinity: the screen-wide spikes (2026-10-15)
+         (set-vector! (-> ww root trans) 0.0 0.0 0.0 1.0)
+         (quaternion-identity! (-> ww root quat))))
       (evaluate-joint-control ww)
       (do-joint-math! ww)
+      (when (= *ww-mode* 1)
+        (set! (-> ww draw origin quad) (-> jak control trans quad))
+        (return 0))
       ;; the anchor: Jak's chest + offsets, Jak's facing (+ the glide lean), the bird's scale
       (let* ((jq (-> jak control quat))
              (up (vector-y-quaternion! (new 'stack-no-clear 'vector) jq))
@@ -115,14 +132,31 @@
                (vector-float*! (-> m vector 0) (-> m vector 0) *ww-shrink*)
                (vector-float*! (-> m vector 1) (-> m vector 1) *ww-shrink*)
                (vector-float*! (-> m vector 2) (-> m vector 2) *ww-shrink*)
+               ;; vector-float*! sets w = 1: on the axis rows that pulled the anchor's position into every axis
+               ;; (the screen-wide spikes, 2026-10-15). Axis rows have w = 0.
+               (set! (-> m vector 0 w) 0.0)
+               (set! (-> m vector 1 w) 0.0)
+               (set! (-> m vector 2 w) 0.0)
                (set-vector! (-> m vector 3) 0.0 0.0 0.0 1.0)))
-            (matrix*! (-> b transform) m anchor)))
+            (when (logtest? *ww-loop* (if (= (-> ww keep i) 1) 1 2))
+              (if (= *ww-mode* 2)
+                (matrix-copy! (-> b transform) m)
+                (matrix*! (-> b transform) m anchor)))))
+        (when *ww-dump-now*
+          (set! *ww-dump-now* #f)
+          (format 0 "Q anchor r0 ~F ~F ~F ~F~%" (-> anchor vector 0 x) (-> anchor vector 0 y) (-> anchor vector 0 z) (-> anchor vector 0 w))
+          (format 0 "Q anchor r3 ~F ~F ~F ~F~%" (-> anchor vector 3 x) (-> anchor vector 3 y) (-> anchor vector 3 z) (-> anchor vector 3 w))
+          (format 0 "Q chest ~F ~F ~F ~F nodes ~D~%" (-> chest x) (-> chest y) (-> chest z) (-> chest w) (-> ww node-list length))
+          (dotimes (k 50)
+            (let ((t (-> ww node-list data k bone transform)))
+              (format 0 "Q b~D k~D r0 ~F ~F ~F ~F " k (-> ww keep k) (-> t vector 0 x) (-> t vector 0 y) (-> t vector 0 z))
+              (format 0 "r3 ~F ~F ~F ~F~%" (-> t vector 3 x) (-> t vector 3 y) (-> t vector 3 z) (-> t vector 3 w)))))
         (set! (-> ww root trans quad) (-> tq trans quad))
         (set! (-> ww draw origin quad) (-> tq trans quad))
         (set! (-> ww draw light-index) (-> jak draw light-index))
-        (vector*! (-> ww draw color-mult) (-> jak draw color-mult) *white-jak-mult*)
+        (vector*! (-> ww draw color-mult) (-> jak draw color-mult) *ww-mult*)
         (set! (-> ww draw color-mult w) (-> jak draw color-mult w))
-        (vector+! (-> ww draw color-emissive) (-> jak draw color-emissive) *white-jak-glow*)
+        (vector+! (-> ww draw color-emissive) (-> jak draw color-emissive) *ww-glow*)
         (set! (-> ww draw color-emissive w) 0.0))))
   0
   (none))
@@ -148,11 +182,15 @@
                                        (* *ww-flap-fps* (/ (the float since) (the float (seconds 1))))))))
             (*wf-gliding?*
              (ja :group! beat :num! (identity (* *ww-glide-frame* (the float (+ -1 (-> beat data 0 length)))))))
-            (else (ja :group! flut-saddle-flut-jump-loop-ja :num! (loop!)))))
+            (else ;; spread (the jump loop folds them away)
+             (ja :group! beat :num! (identity (* *ww-glide-frame* (the float (+ -1 (-> beat data 0 length)))))))))
         (suspend))))
 
 (defbehavior white-wings-init-by-other white-wings ()
   (set! (-> self root) (new 'process 'trsqv))
+  ;; a new trsqv's scale is zero: the bird's joint math then makes zero-scale bones, whose normal matrices
+  ;; divide by zero and the wings drew as screen-wide spikes (2026-10-15)
+  (vector-identity! (-> self root scale))
   (initialize-skeleton self *white-wings-sg* '())
   (set! (-> self mapped?) #f)
   (logior! (-> self draw status) (draw-status hidden))
@@ -170,3 +208,14 @@
          (format 0 "white-wings: spawn ~A~%" (if p (-> p 0) #f))
          (if p (set! (-> *white-wings* handle) (ppointer->handle p)))))))
   (none))
+
+(defun ww-dump ((i int))
+  "DEBUG: print the wings' bone I (transform rows + scale) and the same for Jak's chest bone."
+  (let ((ww (the-as white-wings (handle->process (-> *white-wings* handle)))))
+    (when ww
+      (let ((b (-> ww node-list data i bone)))
+        (format 0 "Q bone ~D ~S keep ~D~%" i (if (-> ww node-list data i joint) (-> ww node-list data i joint name) "-") (-> ww keep i))
+        (dotimes (r 4)
+          (format 0 "Q   r~D ~F ~F ~F ~F~%" r (-> b transform vector r x) (-> b transform vector r y) (-> b transform vector r z) (-> b transform vector r w)))
+        (format 0 "Q   scale ~F ~F ~F ~F~%" (-> b scale x) (-> b scale y) (-> b scale z) (-> b scale w)))))
+  0)

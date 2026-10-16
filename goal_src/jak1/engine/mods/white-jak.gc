@@ -111,7 +111,10 @@
   (and *white-jak-on?*
        *target*
        (nonzero? (-> *target* draw))
-       (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))))
+       (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))
+       ;; a death/warp dissolve counts down inside Jak's own draw and ends with 'death-end: Jak must draw for it,
+       ;; or the warp gate waits forever (Corey stuck at the Geyser Rock gate, 2026-10-15)
+       (zero? (-> *target* draw death-timer))))
 
 (define *white-jak-white-eyes?* #t) ;; Corey: "his eyes should glow white like jak 3"
 
