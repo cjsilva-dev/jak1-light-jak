@@ -2136,6 +2136,7 @@
  "mods/mod-settings.gc"
  "mods/mod-common-functions.gc"
  "mods/white-jak.gc" ;; WHITE JAK
+ "mods/white-flight.gc" ;; WHITE JAK FLIGHT
  "mods/mod-custom-code.gc"
  "mods/mod-debug.gc"
 )

@@ -269,6 +269,10 @@
 
 (#if PC_PORT (defconstant STICK_DEADZONE (-> *pc-settings* stick-deadzone)) (defconstant STICK_DEADZONE 0.3))
 
+;; WHITE JAK test harness: when set, called on pad 0 right after the hardware read (scripted input for tests;
+;; nothing in the game sets it)
+(define *pad-inject-hook* (the-as (function cpad-info none) #f))
+
 (defun service-cpads ()
   "Read from cpads and update vibration"
   ;; iterate over pads
@@ -278,6 +282,7 @@
             (history (-> *cpad-history-list* cpads pad-idx)))
         ;; read from hardware.
         (cpad-get-data pad)
+        (if (and (zero? pad-idx) *pad-inject-hook*) (*pad-inject-hook* pad)) ;; WHITE JAK test harness
         (cond
           ((zero? (logand (-> pad valid) 128))
            (dotimes (buzz-idx 2)

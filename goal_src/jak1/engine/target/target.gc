@@ -80,6 +80,10 @@
   0
   (none))
 
+;; WHITE JAK FLIGHT (engine/mods/white-flight.gc): set while White Jak flies; turns the "stuck" auto-landing off
+(define *wf-flying?* #f)
+(define-extern white-flight-air (function none :behavior target))
+
 (defbehavior target-falling-trans target ((arg0 basic) (arg1 time-frame))
   (if (and (cpad-pressed? (-> self control cpad number) circle) (can-feet?)) (go target-attack-air #f))
   (when (= arg0 'target-eco-powerup)
@@ -92,6 +96,7 @@
   (if (logtest? (-> self control status) (cshape-moving-flags onsurf)) (go target-hit-ground #f))
   (when (if (and (< (target-move-dist (-> *TARGET-bank* stuck-time)) (-> *TARGET-bank* stuck-distance))
                  (>= arg1 0)
+                 (not *wf-flying?*) ;; WHITE JAK FLIGHT: hovering barely moves Jak; never a forced landing
                  (time-elapsed? (-> self state-time) arg1)
                  (not (and *cheat-mode* (cpad-hold? (-> self control cpad number) r2))))
           #t)
@@ -862,6 +867,7 @@
   :exit target-exit
   :trans
     (behavior ()
+      (white-flight-air) ;; WHITE JAK FLIGHT
       (set! (-> self control unknown-float123)
             (fmax (-> self control unknown-float123)
                   (* 0.003921569 (the float (-> *cpad-list* cpads (-> self control unknown-cpad-info00 number) abutton (abutton-idx x)))))) ;; og:preserve-this abutton indexing
@@ -953,6 +959,7 @@
   :exit target-exit
   :trans
     (behavior ()
+      (white-flight-air) ;; WHITE JAK FLIGHT
       (target-falling-trans #f (the-as time-frame (if (ja-group? eichar-jump-loop-ja) 15 -1)))
       (if (and (cpad-pressed? (-> self control cpad number) square)
                (< (vector-dot (-> self control dynam gravity-normal) (-> self control transv)) 22118.4)
@@ -1009,6 +1016,7 @@
   :exit target-exit
   :trans
     (behavior ()
+      (white-flight-air) ;; WHITE JAK FLIGHT
       (target-falling-trans #f (the-as time-frame (if (ja-group? eichar-jump-loop-ja) 15 -1)))
       ;; og:preserve-this - High FPS Fix
       (if (and (recently-pressed? square)
@@ -1141,6 +1149,7 @@
       (set-time! (-> self state-time)))
   :trans
     (behavior ()
+      (white-flight-air) ;; WHITE JAK FLIGHT
       (target-falling-trans (-> self control unknown-spoolanim00)
                             (the-as time-frame (if (= (-> self control unknown-spoolanim00) #f) 0 (/ (the-as int (-> *TARGET-bank* stuck-time)) 2)))))
   :code

@@ -32,8 +32,11 @@
 ;; match bones by slot number instead of joint name (the bind-pose correction then pairs the same slots)
 (define *white-jak-by-index?* #f) ;; by slot number = spikes (the mesh is skinned by name order), 2026-10-15
 
-;; glow added on top of Jak's own lighting; the ending uses 0.5
+;; glow added on top of Jak's own lighting (the ending uses 0.5 grey), and a multiplier on the texture colour. The
+;; white-eco textures + 0.5 grey read "kinda yellow" to Corey (2026-10-15): cut red/green, glow pale blue (Light Jak).
 (define *white-jak-emissive* 0.5)
+(define *white-jak-glow* (new 'static 'vector :x 0.45 :y 0.55 :z 0.75 :w 0.0))
+(define *white-jak-mult* (new 'static 'vector :x 0.8 :y 0.88 :z 1.0 :w 1.0))
 
 (deftype white-jak-globals (structure)
   ((handle handle) ;; the puppet. NOT a plain global: Jak 1 symbol values are 32 bits and a handle is 64 (process + pid);
@@ -110,6 +113,26 @@
        (nonzero? (-> *target* draw))
        (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))))
 
+(defun white-jak-eyes ((wj white-jak) (jak target))
+  "Jak 1 draws eyes into a texture per eye slot (update-eyes, eye.gc), only for a slot whose process has the eye bit and
+   was drawn. Jak's merc-eye-anim fills his slot with his eye/blink data, but Jak is not drawn while the puppet stands in
+   (black eyes, Corey 2026-10-15). Hand the puppet's slot to the puppet: its own eye shaders, Jak's live eye data."
+  (let ((his-ctrl (-> jak draw mgeo header eye-ctrl))
+        (our-ctrl (-> wj draw mgeo header eye-ctrl)))
+    (when (and (nonzero? his-ctrl) (nonzero? our-ctrl))
+      (let ((src (-> *eye-control-array* data (-> his-ctrl eye-slot)))
+            (dst (-> *eye-control-array* data (-> our-ctrl eye-slot))))
+        (when (!= src dst)
+          (set! (-> dst left data 0 quad) (-> src left data 0 quad))
+          (set! (-> dst left data 1 quad) (-> src left data 1 quad))
+          (set! (-> dst right data 0 quad) (-> src right data 0 quad))
+          (set! (-> dst right data 1 quad) (-> src right data 1 quad))
+          (set! (-> dst level) (-> src level)))
+        (set! (-> dst process) (process->handle wj))
+        (set! (-> dst shaders) (the-as (inline-array adgif-shader) (-> our-ctrl iris-shader)))
+        (logior! (-> wj skel status) (janim-status eye)))))
+  (none))
+
 (defun white-jak-postbind ((jak target))
   "Called from Jak's postbind (after his joint math, before the draw): copy his pose onto the puppet."
   (let ((wj (the-as white-jak (handle->process (-> *white-jak* handle)))))
@@ -125,17 +148,15 @@
                   (matrix*! (-> d transform) (-> *white-jak-fix* m i) (-> s transform))
                   (matrix-copy! (-> d transform) (-> s transform)))
                 (set! (-> d scale quad) (-> s scale quad)))))))
+      (white-jak-eyes wj jak)
       ;; the renderer culls on origin + bounds
       (set! (-> wj root trans quad) (-> jak root trans quad))
       (set! (-> wj draw origin quad) (-> jak draw origin quad))
       (set! (-> wj draw light-index) (-> jak draw light-index))
-      (set! (-> wj draw color-mult quad) (-> jak draw color-mult quad))
-      (let ((e *white-jak-emissive*))
-        (set-vector! (-> wj draw color-emissive)
-                     (+ e (-> jak draw color-emissive x))
-                     (+ e (-> jak draw color-emissive y))
-                     (+ e (-> jak draw color-emissive z))
-                     0.0))))
+      (vector*! (-> wj draw color-mult) (-> jak draw color-mult) *white-jak-mult*)
+      (set! (-> wj draw color-mult w) (-> jak draw color-mult w))
+      (vector+! (-> wj draw color-emissive) (-> jak draw color-emissive) *white-jak-glow*)
+      (set! (-> wj draw color-emissive w) 0.0)))
   0
   (none))
 

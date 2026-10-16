@@ -1,0 +1,257 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: white-flight.gc
+;; name in dgo: white-flight
+;; dgos: GAME
+
+;; WHITE JAK FLIGHT (prototype, 2026-10-15): Dark Flight's flight (flight-core.gc in the Jak II / Jak 3 repos) on
+;; Jak 1's White Jak. Same controls and numbers as Dark Jak's flight: jump, double jump, then X again takes off (any X
+;; while falling too); X flaps (hold for more lift), hold L1 glides, R1 held right after a flap = turbo, R1 tap = dash,
+;; Square = Jak 1's own ground pound as the landing. Only while White Jak is on (*white-jak-on?*, R3).
+;; Called from the :trans of target-jump (and -jump-forward), -double-jump, -high-jump and -falling (target.gc);
+;; *wf-flying?* (defined in target.gc) also switches off the "stuck" auto-landing in target-falling-trans.
+;; No wings yet (Corey's idea: white Flut Flut wings).
+
+;; ---- tuning: Dark Jak's numbers from flight-core.gc (Jak II / Jak 3) ----
+(define *wf-flap-impulse*      (meters 17))
+(define *wf-climb-cap*         (meters 24))
+(define *wf-flap-surge*        (meters 10))
+(define *wf-flap-cooldown*     (seconds 0.5))
+(define *wf-gravity*           110592.0)    ;; ~27 m/s^2 while flying (Jak 1 walks at 60)
+(define *wf-gravity-max*       163840.0)
+(define *wf-hold-bonus*        (meters 10))
+(define *wf-hold-accel*        (meters 25))
+(define *wf-big-flap-impulse*  (meters 28)) ;; flap out of a glide
+(define *wf-big-flap-cap*      (meters 35))
+(define *wf-glide-sink*        (meters 5))
+(define *wf-glide-cruise*      (meters 22))
+(define *wf-glide-max*         (meters 45))
+(define *wf-glide-accel*       (meters 10))
+(define *wf-glide-turbo-accel* (meters 40))
+(define *wf-glide-turbo-max*   (meters 60)) ;; Jak II/3 open-world turbo is 90; Jak 1's levels stream by distance
+(define *wf-glide-turbo-sink*  (meters 1))
+(define *wf-glide-convert*     0.8)
+(define *wf-glide-catch*       (meters 30))
+(define *wf-glide-drag*        0.25)
+(define *wf-glide-gravity*     49152.0)
+(define *wf-turbo-window*      (seconds 0.5))
+(define *wf-fly-turbo-accel*   (meters 40))
+(define *wf-fly-turbo-max*     (meters 60))
+(define *wf-dash-speed*        (meters 55))
+(define *wf-dash-time*         (seconds 0.3))
+(define *wf-dash-cooldown*     (seconds 0.6))
+(define *wf-glide-pitch*       60.0)        ;; degrees forward while gliding (the Superman lean, on his main bone)
+(define *wf-pitch-step*        8.0)         ;; degrees per frame toward it
+
+;; ---- state ----
+(define *wf-flap-time*   (the-as time-frame 0))
+(define *wf-from-glide?* #f)
+(define *wf-holding?*    #f)
+(define *wf-hold-given*  0.0)
+(define *wf-gliding?*    #f)
+(define *wf-glide-speed* 0.0)
+(define *wf-dash-start*  (the-as time-frame 0))
+(define *wf-body-pitch*  0.0)
+
+;; ---- movement surfaces (copies of Jak 1's jump surface, with Dark Flight's handling) ----
+(defun wf-make-surface ((src surface) (name symbol) (turnv float) (speed float) (target float) (seek float) (fric float))
+  (let ((m (the-as surface (copy src 'global))))
+    (set! (-> m name) name)
+    (set! (-> m turnv) turnv)
+    (set! (-> m transv-max) speed)
+    (set! (-> m target-speed) target)
+    (set! (-> m seek0) seek)
+    (set! (-> m seek90) seek)
+    (set! (-> m seek180) seek)
+    (set! (-> m fric) fric)
+    (set! (-> m flags) (surface-flags jump)) ;; no ledge grabs mid-flight
+    m))
+
+(define *wf-fly-mods*      (wf-make-surface *jump-mods* 'white-fly 163840.0 106496.0 106496.0 0.3 0.2))
+(define *wf-fly-fast-mods* (wf-make-surface *jump-mods* 'white-fly-fast 131072.0 368640.0 368640.0 0.3 0.2))
+(define *wf-glide-mods*    (wf-make-surface *jump-mods* 'white-glide 98304.0 409600.0 184320.0 0.05 0.05))
+(define *wf-dash-mods*     (wf-make-surface *jump-mods* 'white-dash 131072.0 368640.0 368640.0 0.0 0.0))
+
+;; ---- the lean: a callback on Jak's main bone (node 3) ----
+(defun wf-main-joint ((node cspace) (tq transformq))
+  "Leans Jak forward into a glide; eases back and takes itself off once he is upright and not flying."
+  (let ((want (if (and *wf-flying?* *wf-gliding?*) *wf-glide-pitch* 0.0)))
+    (set! *wf-body-pitch* (if (< *wf-body-pitch* want)
+                              (fmin want (+ *wf-body-pitch* *wf-pitch-step*))
+                              (fmax want (- *wf-body-pitch* *wf-pitch-step*)))))
+  (cond
+    ((!= *wf-body-pitch* 0.0)
+     (let ((r (quaternion-axis-angle! (new 'stack-no-clear 'quaternion) 1.0 0.0 0.0 (degrees *wf-body-pitch*))))
+       (quaternion*! (-> tq quat) r (-> tq quat))))
+    ((not *wf-flying?*) (set! (-> node param0) #f)))
+  (cspace<-parented-transformq-joint! node tq)
+  (none))
+
+;; ---- physics (flight-core.gc, adapted) ----
+(defbehavior wf-flap-lift target ()
+  "One flap: the climb replaces the vertical speed (horizontal kept), then a forward surge."
+  (let* ((up (-> self control dynam gravity-normal))
+         (vs (vector-dot up (-> self control transv)))
+         (climb (if *wf-from-glide?*
+                  (fmin *wf-big-flap-cap* (+ *wf-big-flap-impulse* (fmax 0.0 vs)))
+                  (fmin *wf-climb-cap* (+ *wf-flap-impulse* (fmax 0.0 vs))))))
+    (vector+float*! (-> self control transv) (-> self control transv) up (- climb vs)))
+  (let ((fwd (vector-z-quaternion! (new-stack-vector0) (-> self control quat-for-control))))
+    (set! (-> fwd y) 0.0)
+    (vector-normalize! fwd 1.0)
+    (vector+float*! (-> self control transv) (-> self control transv) fwd *wf-flap-surge*))
+  (none))
+
+(defbehavior wf-hold-tick target ()
+  "Holding X through a flap keeps pushing up (cancelling gravity too), up to the bonus; ends when it adds nothing
+   (Dark Flight's 2026-10-12 endless-climb fix)."
+  (let ((dv 0.0))
+    (when (and *wf-holding?* (cpad-hold? (-> self control cpad number) x) (< *wf-hold-given* *wf-hold-bonus*))
+      (let* ((up (-> self control dynam gravity-normal))
+             (vs (vector-dot up (-> self control transv))))
+        (set! dv (fmin (- *wf-hold-bonus* *wf-hold-given*) (* *wf-hold-accel* (seconds-per-frame))))
+        (set! dv (fmax 0.0 (fmin dv (- (+ *wf-climb-cap* *wf-hold-bonus*) vs))))
+        (when (< (meters 0.01) dv)
+          (set! *wf-hold-given* (+ *wf-hold-given* dv))
+          (vector+float*! (-> self control transv)
+                          (-> self control transv)
+                          up
+                          (+ dv (* (-> self control dynam gravity-length) (seconds-per-frame)))))))
+    (if (<= dv (meters 0.01)) (set! *wf-holding?* #f)))
+  (none))
+
+(defbehavior wf-turbo-on? target ()
+  (and (cpad-hold? (-> self control cpad number) r1)
+       (not (time-elapsed? *wf-flap-time* *wf-turbo-window*))
+       (not (cpad-hold? (-> self control cpad number) l1))))
+
+(defbehavior wf-horizontal-push target ((speed float))
+  "Set the horizontal speed to SPEED along Jak's facing, keeping the vertical speed."
+  (let* ((up (-> self control dynam gravity-normal))
+         (tv (-> self control transv))
+         (vs (vector-dot up tv))
+         (fwd (vector-z-quaternion! (new-stack-vector0) (-> self control quat-for-control))))
+    (vector-! fwd fwd (vector-float*! (new-stack-vector0) up (vector-dot up fwd)))
+    (vector-normalize! fwd speed)
+    (vector+! tv fwd (vector-float*! (new-stack-vector0) up vs)))
+  (none))
+
+(defbehavior wf-horizontal-speed target ()
+  (let* ((up (-> self control dynam gravity-normal))
+         (tv (-> self control transv))
+         (vs (vector-dot up tv)))
+    (vector-length (vector-! (new-stack-vector0) tv (vector-float*! (new-stack-vector0) up vs)))))
+
+(defbehavior wf-glide target ()
+  "Per frame while gliding: slow sink, real dive speed becomes forward speed, R1 = turbo."
+  (let* ((up (-> self control dynam gravity-normal))
+         (tv (-> self control transv))
+         (vs (vector-dot up tv))
+         (hs (wf-horizontal-speed))
+         (dt (seconds-per-frame))
+         (turbo? (cpad-hold? (-> self control cpad number) r1))
+         (sink (if turbo? *wf-glide-turbo-sink* *wf-glide-sink*))
+         (before *wf-glide-speed*))
+    (when (not *wf-gliding?*)
+      (set! *wf-gliding?* #t)
+      (set! *wf-glide-speed* hs)
+      (set! before hs))
+    (when (< vs (- sink))
+      (let ((shed (fmin (- (- sink) vs) (* *wf-glide-catch* dt))))
+        (set! vs (+ vs shed))
+        (set! *wf-glide-speed*
+              (+ *wf-glide-speed* (* *wf-glide-convert* (fmax 0.0 (- shed (* 1.5 (-> self control dynam gravity-length) dt))))))))
+    (cond
+      (turbo? (set! *wf-glide-speed* (+ *wf-glide-speed* (* *wf-glide-turbo-accel* dt))))
+      ((< *wf-glide-speed* *wf-glide-cruise*)
+       (set! *wf-glide-speed* (fmin *wf-glide-cruise* (+ *wf-glide-speed* (* *wf-glide-accel* dt)))))
+      (else (set! *wf-glide-speed* (- *wf-glide-speed* (* (- *wf-glide-speed* *wf-glide-cruise*) *wf-glide-drag* dt)))))
+    (set! *wf-glide-speed*
+          (if turbo? (fmin *wf-glide-turbo-max* *wf-glide-speed*) (fmin *wf-glide-speed* (fmax *wf-glide-max* before))))
+    ;; vertical: the (possibly caught) sink
+    (vector+float*! tv tv up (- vs (vector-dot up tv)))
+    (wf-horizontal-push *wf-glide-speed*)
+    (set! (-> self control dynam gravity-length) *wf-glide-gravity*)
+    (set! (-> self control mod-surface) *wf-glide-mods*))
+  (none))
+
+(defbehavior wf-dash target ()
+  "R1 tap: a level lunge along Jak's facing (a glide gets the speed as momentum)."
+  (when (and (cpad-pressed? (-> self control cpad number) r1) (time-elapsed? *wf-dash-start* *wf-dash-cooldown*))
+    (set-time! *wf-dash-start*)
+    (if *wf-gliding?* (set! *wf-glide-speed* (fmax *wf-glide-speed* *wf-dash-speed*)))
+    (sound-play "jump" :pitch 1.5))
+  (when (and (not (time-elapsed? *wf-dash-start* *wf-dash-time*)) (not *wf-gliding?*))
+    (wf-horizontal-push *wf-dash-speed*)
+    (set! (-> self control transv y) (fmax 0.0 (-> self control transv y)))
+    (set! (-> self control mod-surface) *wf-dash-mods*))
+  (none))
+
+(defbehavior wf-takeoff! target ()
+  (when (not *wf-flying?*)
+    (set! *wf-flying?* #t)
+    (set! *wf-gliding?* #f)
+    (set! (-> self node-list data 3 param0) wf-main-joint)
+    (format 0 "white-flight: takeoff~%"))
+  (none))
+
+(defun wf-land! ((jak target))
+  "Flight over (landed, left the flight states, White Jak off): Jak's own gravity back."
+  (when *wf-flying?*
+    (set! *wf-flying?* #f)
+    (set! *wf-gliding?* #f)
+    (set! *wf-holding?* #f)
+    (set! (-> jak control dynam gravity-length) (-> jak control standard-dynamics gravity-length))
+    (set! (-> jak control dynam gravity-max) (-> jak control standard-dynamics gravity-max))
+    (format 0 "white-flight: landed~%"))
+  (none))
+
+(defbehavior white-flight-air target ()
+  "From the jump/fall states' :trans. The first X after a jump is still the double jump; any X after that (or
+   while falling, or once flying) is a flap. The press is consumed so the jump states don't also act on it."
+  (cond
+    ((and *white-jak-on?* (not (logtest? (-> self control status) (cshape-moving-flags onsurf))))
+     ;; not on the double jump's own press: the double-jump state starts on it, so skip its first frames
+     (when (and (cpad-pressed? (-> self control cpad number) x)
+                (or *wf-flying?*
+                    (not (or (= (-> self state name) 'target-jump)
+                             (and (= (-> self state name) 'target-double-jump)
+                                  (not (time-elapsed? (-> self state-time) (seconds 0.1))))))))
+       (logclear! (-> *cpad-list* cpads (-> self control cpad number) button0-rel 0) (pad-buttons x))
+       (when (or (not *wf-flying?*) (time-elapsed? *wf-flap-time* *wf-flap-cooldown*))
+         (set-time! *wf-flap-time*)
+         (set! *wf-from-glide?* *wf-gliding?*)
+         (wf-takeoff!)
+         (wf-flap-lift)
+         (effect-control-method-10 (-> self skel effect) 'jump-double (the-as float -1.0) -1) ;; the double jump's puff + sound
+         (set! *wf-from-glide?* #f)
+         (set! *wf-holding?* #t)
+         (set! *wf-hold-given* 0.0)))
+     (wf-hold-tick)
+     (if (cpad-hold? (-> self control cpad number) l1) (wf-takeoff!))
+     (when *wf-flying?*
+       ;; a flight is never a fall: the landing is always the soft one (Jak 1 stuns Jak after a long drop)
+       (vector-copy! (-> self control last-trans-any-surf) (-> self control trans))
+       (set! (-> self control dynam gravity-length) *wf-gravity*)
+       (set! (-> self control dynam gravity-max) *wf-gravity-max*)
+       (set! (-> self control mod-surface)
+             (if (and (cpad-hold? (-> self control cpad number) r1) (not (time-elapsed? *wf-flap-time* *wf-turbo-window*)))
+               *wf-fly-fast-mods*
+               *wf-fly-mods*))
+       (wf-dash)
+       (if (wf-turbo-on?)
+         (wf-horizontal-push (fmin *wf-fly-turbo-max* (+ (wf-horizontal-speed) (* *wf-fly-turbo-accel* (seconds-per-frame))))))
+       (if (cpad-hold? (-> self control cpad number) l1) (wf-glide) (set! *wf-gliding?* #f))))
+    (else (wf-land! self)))
+  (none))
+
+(defun white-flight-guard ()
+  "Every frame (white-jak-maintenance): flying but no longer in a flight state (ground pound, spin, hit, death,
+   cutscene, swim...) = the flight is over."
+  (when (and *wf-flying?* *target*)
+    (if (not (and *white-jak-on?*
+                  (member (-> *target* state name)
+                          '(target-jump target-jump-forward target-double-jump target-high-jump target-falling))))
+      (wf-land! *target*)))
+  (none))
