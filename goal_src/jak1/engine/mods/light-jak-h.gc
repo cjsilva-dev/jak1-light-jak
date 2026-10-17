@@ -47,7 +47,8 @@
    (dash-cooldown     time-frame) ;; (*fc-dash-cooldown*)
    (glide-launch      time-frame) ;; a flap pauses the glide this long (Jak 3: swoop-again plays out first; *fc-launch-time*)
    (glide-pitch       float)      ;; degrees of forward lean in a glide (Jak 3's Light glide is upright: a small lean sells it on Jak 1's jump pose)
-   (pitch-step        float)      ;; degrees per frame toward it
+   (pitch-ease        float)      ;; per second: the lean eases toward its target (it was 3 degrees a FRAME: at the
+                                  ;; Deck's 90 Hz he tipped in 0.1 s, before his limbs had blended; Corey: "awkward")
    ;; ---- the superhero landing (Square in flight = Jak 1's ground pound, plunging) ----
    (slam-speed        float)      ;; the plunge starts at least this fast (*fc-slam-speed*)
    (slam-max          float)      ;; terminal plunge speed (Jak 1's own ground-pound cap)
@@ -65,19 +66,27 @@
    (cam-blend-out     float)      ;; per second, back to it
    (cam-radius        float)      ;; the collision probe's sphere
    ;; ---- the flying pose: Jak's jump animation, driven by his vertical speed (aframes) ----
-   (pose-up           float)
-   (pose-apex         float)
-   (pose-down         float)
-   (pose-kick         float)
+   ;; RAW frames of eichar-jump-ja (a Deck frame scan, 2026-10-17: 0-6 the stiff launch, arms hanging and legs locked,
+   ;; which every flap used to land on; 15-24 arms out wide, legs tucking; 27-33 arms up and back)
+   (pose-up           float)      ;; climbing fast
+   (pose-apex         float)      ;; the crest
+   (pose-down         float)      ;; sinking fast
+   (flap-from         float)      ;; the flap layer: a downstroke of the arms, from up-and-back ...
+   (flap-to           float)      ;; ... to out wide
+   (flap-weight       float)      ;; its strength at full
    (pose-range        float)      ;; vertical speed for the full up/down pose
    (pose-rate         float)      ;; aframes per second
-   (pose-kick-rate    float)      ;; ... right after a flap
+   (pose-kick-rate    float)      ;; ... right after a flap (the base layer, under the flap layer); frames per second
+   (flap-in           time-frame) ;; the flap layer (each press: wind-up crouch -> stretch -> crest) fades in this fast
+   (flap-play         time-frame) ;; ... plays from flap-from to flap-to over this
+   (flap-out          time-frame) ;; ... then fades out over this
    ;; the glide: Jak's swim stroke (eichar-swim-walk-ja, raw frames 0-33) held near its widest spread, swaying. The
    ;; Deck screenshots of 2026-10-17 picked it over eleven loops: frames 0-3 and 15-18 spread, 9-12 tucked.
    (pose-glide-mid    float)      ;; raw frame the sway centres on
-   (pose-glide-amp    float)      ;; frames either side
+   (pose-glide-amp    float)      ;; frames either side (Corey, 2026-10-17: "i liked his swimming animation during the
+                                  ;; glide, it was the wings i didn't like": keep 2.0 at 0.7 Hz, the build he played)
    (pose-sway-hz      float)      ;; sways per second (x1.6 in a turbo)
-   (pose-blend        time-frame) ;; crossfade between the flying and the glide pose
+   (pose-blend        time-frame) ;; the glide layer fades in / out over this
    ;; ---- the look ----
    (glow              vector :inline) ;; added to Jak's emissive
    (mult              vector :inline) ;; on his colour
@@ -90,7 +99,14 @@
    (wing-back         float)      ;; ... and behind it
    (wing-stroke       float)      ;; seconds for one full stroke per X press
    (wing-idle-fps     float)      ;; between presses the wings only drift
-   (wing-glide-fps    float)))    ;; the glide loop's pace
+   (wing-glide-fps    float)      ;; gliding, the wings keep flapping the FLY loop (symmetric; the pelican's own glide
+                                  ;; loop banks to one side, Corey: "crooked") at this pace at cruise speed, faster as
+                                  ;; the glide speeds up (Jak 3's true-flight-glide-pose); held still they looked frozen
+   (wing-glide-min    float)      ;; pace multiplier bounds. Jak 3: loop rate 0.6 x speed/cruise in 0.4-1.6
+                                  ;; (*tf-glide-loop-rate* / -rate-min / -rate-max); here 30 fps x 0.6 = 18 at cruise,
+                                  ;; bounds 0.4/0.6 and 1.6/0.6
+   (wing-glide-max    float)
+   (wing-blend        time-frame))) ;; crossfade between the wings' fly and glide loops
 
 (define *lj-tune*
   (new 'static 'lj-tuning
@@ -103,20 +119,21 @@
        :glide-turbo-accel (meters 25) :glide-turbo-max (meters 50) :glide-turbo-sink (meters 1)
        :glide-convert 0.8 :glide-catch (meters 30) :glide-drag 0.25 :glide-gravity 49152.0
        :dash-speed (meters 55) :dash-time (seconds 0.3) :dash-cooldown (seconds 0.6)
-       :glide-launch (seconds 0.6) :glide-pitch 30.0 :pitch-step 3.0
+       :glide-launch (seconds 0.6) :glide-pitch 30.0 :pitch-ease 7.0
        :slam-speed (meters 20) :slam-max 245760.0 :slam-boost-max 409600.0 :slam-blast (meters 9)
        :cam-dist (meters 8) :cam-height (meters 3) :cam-glide-dist (meters 10) :cam-glide-height (meters 4)
        :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-blend-in 3.0 :cam-blend-out 2.0
        :cam-radius (meters 0.6)
-       :pose-up 8.0 :pose-apex 20.0 :pose-down 33.0 :pose-kick 4.0
-       :pose-range (meters 12) :pose-rate 30.0 :pose-kick-rate 70.0
-       :pose-glide-mid 3.0 :pose-glide-amp 2.0 :pose-sway-hz 0.7 :pose-blend (seconds 0.2)
+       :pose-up 15.0 :pose-apex 21.0 :pose-down 30.0 :flap-from 28.0 :flap-to 15.0 :flap-weight 0.85
+       :pose-range (meters 12) :pose-rate 20.0 :pose-kick-rate 40.0
+       :flap-in (seconds 0.08) :flap-play (seconds 0.4) :flap-out (seconds 0.25)
+       :pose-glide-mid 3.0 :pose-glide-amp 2.0 :pose-sway-hz 0.7 :pose-blend (seconds 0.3)
        :glow (new 'static 'vector :x 0.3 :y 0.42 :z 0.85 :w 0.0)
        :mult (new 'static 'vector :x 0.7 :y 0.82 :z 1.35 :w 1.0)
        :wing-glow (new 'static 'vector :x 0.55 :y 0.6 :z 0.7 :w 0.0)
        :wing-mult (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0)
        :wing-scale 0.55 :wing-shrink 0.15 :wing-up (meters 0.15) :wing-back (meters 0.25)
-       :wing-stroke 0.45 :wing-idle-fps 5.0 :wing-glide-fps 30.0))
+       :wing-stroke 0.45 :wing-idle-fps 5.0 :wing-glide-fps 18.0 :wing-glide-min 0.67 :wing-glide-max 2.67 :wing-blend (seconds 0.3)))
 
 (deftype lj-state (structure)
   ((on?           symbol)     ;; Light Jak form on (R3 toggles)
@@ -135,8 +152,8 @@
    (glide-speed   float)
    (body-pitch    float)
    (pose-cur      float)
-   (pose-glide?   symbol)     ;; the pose showing is the glide pose (a change blends)
-   (pose-blend-at time-frame)
+   (pose-mixing?  symbol)     ;; Jak's channels are the flight's three-layer mix (lj-flight-pose)
+   (pose-glide-w  float)      ;; the glide layer's weight, 0-1 (linear; shown eased)
    (pose-phase    float)      ;; the glide sway, degrees
    (cam-blend     float)
    (cam-pos       vector :inline)
@@ -145,7 +162,7 @@
    (wings         handle)
    (hidden-proc   process-drawable))) ;; the process whose mesh the draw skips (Jak while the puppet stands in), or #f
 
-(define *lj* (new 'static 'lj-state :on? #t :wings-on? #t :pose-cur 20.0))
+(define *lj* (new 'static 'lj-state :on? #t :wings-on? #t :pose-cur 21.0))
 ;; a zeroed handle or pointer is NOT "none" here (0 is true in GOAL): set the empties at load
 (set! (-> *lj* puppet) (the-as handle #f))
 (set! (-> *lj* wings) (the-as handle #f))
@@ -164,5 +181,6 @@
   (set! (-> *lj* hold-given) 0.0)
   (set! (-> *lj* glide-speed) 0.0)
   (set! (-> *lj* body-pitch) 0.0)
-  (set! (-> *lj* pose-glide?) #f)
+  (set! (-> *lj* pose-mixing?) #f)
+  (set! (-> *lj* pose-glide-w) 0.0)
   (none))

@@ -25,7 +25,8 @@
   ((keep        int8 64)  ;; per node: 1 = a wing bone (kept), 0 = body (shrunk into the anchor)
    (chest-node  int32)
    (mapped?     symbol)
-   (shown?      symbol))
+   (shown?      symbol)
+   (glide-shown? symbol)) ;; the glide loop is the one showing (a change crossfades)
   (:states
    lj-wings-idle))
 
@@ -137,12 +138,26 @@
           (let* ((t *lj-tune*)
                  (since (- (current-time) (-> *lj* flap-time)))
                  (gliding? (-> *lj* gliding?))
-                 (anim (the-as art-joint-anim (if gliding? pelican-glide-ja pelican-fly-ja)))
+                 (anim (the-as art-joint-anim pelican-fly-ja))
                  (n (the float (+ -1 (-> anim data 0 length))))
                  (stroking? (and (not gliding?) (< since (the time-frame (* (-> t wing-stroke) 300.0)))))
-                 (fps (cond (gliding? (-> t wing-glide-fps)) (stroking? (/ n (-> t wing-stroke))) (else (-> t wing-idle-fps))))
-                 (beat (if (< since (seconds 0.04)) 0.0 (+ (-> *lj* wing-beat) (* fps (seconds-per-frame))))))
+                 (fps (if stroking? (/ n (-> t wing-stroke)) (-> t wing-idle-fps)))
+                 (beat (cond
+                         ;; gliding: the fly loop keeps going, its pace following the glide speed
+                         (gliding? (+ (-> *lj* wing-beat)
+                                      (* (-> t wing-glide-fps) (seconds-per-frame)
+                                         (fmax (-> t wing-glide-min)
+                                               (fmin (-> t wing-glide-max) (/ (-> *lj* glide-speed) (-> t glide-cruise)))))))
+                         ((< since (seconds 0.04)) 0.0)
+                         (else (+ (-> *lj* wing-beat) (* fps (seconds-per-frame)))))))
+            (if (< beat 0.0) (set! beat (+ beat n)))
             (if (>= beat n) (set! beat (- beat (* n (the float (the int (/ beat n)))))))
+            ;; fly loop <-> glide loop: crossfade (lj-wings-place's evaluate-joint-control runs it), from the new
+            ;; loop's start
+            (when (!= gliding? (-> self glide-shown?))
+              (set! (-> self glide-shown?) gliding?)
+              (if (not gliding?) (set! beat 0.0))
+              (ja-channel-push! 1 (-> t wing-blend)))
             (set! (-> *lj* wing-beat) beat)
             (ja :group! anim :num! (identity beat))))
         (suspend))))
@@ -154,6 +169,7 @@
   (initialize-skeleton self *lj-wings-sg* '())
   (set! (-> self mapped?) #f)
   (set! (-> self shown?) #f)
+  (set! (-> self glide-shown?) #f)
   (logior! (-> self draw status) (draw-status hidden))
   (go lj-wings-idle)
   (none))
