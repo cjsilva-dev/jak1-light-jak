@@ -45,6 +45,7 @@
    (dash-speed        float)      ;; R1 tap (*fc-dash-speed*)
    (dash-time         time-frame) ;; (*fc-dash-time*)
    (dash-cooldown     time-frame) ;; (*fc-dash-cooldown*)
+   (glide-launch      time-frame) ;; a flap pauses the glide this long (Jak 3: swoop-again plays out first; *fc-launch-time*)
    (glide-pitch       float)      ;; degrees of forward lean in a glide (Jak 3's Light glide is upright: a small lean sells it on Jak 1's jump pose)
    (pitch-step        float)      ;; degrees per frame toward it
    ;; ---- the superhero landing (Square in flight = Jak 1's ground pound, plunging) ----
@@ -97,7 +98,7 @@
        :glide-turbo-accel (meters 25) :glide-turbo-max (meters 50) :glide-turbo-sink (meters 1)
        :glide-convert 0.8 :glide-catch (meters 30) :glide-drag 0.25 :glide-gravity 49152.0
        :dash-speed (meters 55) :dash-time (seconds 0.3) :dash-cooldown (seconds 0.6)
-       :glide-pitch 30.0 :pitch-step 3.0
+       :glide-launch (seconds 0.6) :glide-pitch 30.0 :pitch-step 3.0
        :slam-speed (meters 20) :slam-max 245760.0 :slam-boost-max 409600.0 :slam-blast (meters 9)
        :cam-dist (meters 8) :cam-height (meters 3) :cam-glide-dist (meters 10) :cam-glide-height (meters 4)
        :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-blend-in 3.0 :cam-blend-out 2.0
@@ -121,6 +122,7 @@
    (flap-pending? symbol)     ;; a flap's wind-up is running
    (slam?         symbol)     ;; a superhero landing is in progress
    (slam-started? symbol)
+   (powerup?      symbol)     ;; the R3 switch asked for the eco powerup pose (sent from the puppet's process)
    (flap-time     time-frame) ;; last flap press
    (dash-start    time-frame)
    (hold-given    float)

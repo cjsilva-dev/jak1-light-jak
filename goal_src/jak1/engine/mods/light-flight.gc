@@ -198,7 +198,8 @@
       (logclear! (-> *cpad-list* cpads (-> self control cpad number) button0-rel 0) (pad-buttons x))
       (when (or (not (-> *lj* flying?)) (time-elapsed? (-> *lj* flap-time) (-> *lj-tune* flap-cooldown)))
         (set-time! (-> *lj* flap-time))
-        (set! (-> *lj* from-glide?) (-> *lj* gliding?))
+        ;; L1 held = the big launch, as Jak 3's true-flight-flap-speed (every flap with L1 held, not only the first)
+        (set! (-> *lj* from-glide?) (cpad-hold? (-> self control cpad number) l1))
         (lj-takeoff!)
         (set! (-> *lj* flap-pending?) #t) ;; the lift lands after the wind-up
         (effect-control-method-10 (-> self skel effect) 'jump-double (the-as float -1.0) -1))) ;; the double jump's puff + sound
@@ -221,7 +222,16 @@
       (set! (-> self control mod-surface)
             (if (cpad-hold? (-> self control cpad number) r1) *lj-fly-fast-mods* *lj-fly-mods*))
       (lj-dash)
-      (if (cpad-hold? (-> self control cpad number) l1) (lj-glide) (set! (-> *lj* gliding?) #f))
+      ;; L1 glides, except while a flap plays out: Jak 3's flap (swoop-again) runs to its end under flight gravity
+      ;; before swoop-falling glides again. Gliding through it climbed on glide gravity, ~70% higher (Corey,
+      ;; 2026-10-17: "he floats way more up than light jak"). Leaving a glide puts flight gravity back.
+      (cond
+        ((and (cpad-hold? (-> self control cpad number) l1)
+              (time-elapsed? (-> *lj* flap-time) (-> *lj-tune* glide-launch)))
+         (lj-glide))
+        ((-> *lj* gliding?)
+         (set! (-> *lj* gliding?) #f)
+         (set! (-> self control dynam gravity-length) (-> *lj-tune* gravity))))
       ;; Square = the superhero landing: Jak 1's ground pound, plunging from the air (lj-slam-tick)
       (when (cpad-pressed? (-> self control cpad number) square)
         (logclear! (-> *cpad-list* cpads (-> self control cpad number) button0-rel 0) (pad-buttons square))

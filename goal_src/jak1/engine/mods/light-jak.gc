@@ -195,6 +195,11 @@
   :trans
     (behavior ()
       (if (and (not (-> self mapped?)) *target*) (lj-puppet-build-map *target*))
+      ;; the R3 switch's pose: the game's own eco-vent powerup (arm up). Its 'powerup event only starts it from
+      ;; standing or walking; in the air the burst alone shows the switch. Sent from here: an event needs a sender.
+      (when (-> *lj* powerup?)
+        (set! (-> *lj* powerup?) #f)
+        (if *target* (send-event *target* 'powerup (pickup-type eco-blue) (-> *FACT-bank* eco-full-inc))))
       (let ((want (if (and (-> self mapped?) (lj-form-active?)) #t #f)))
         (if (!= want (-> self shown?)) (lj-puppet-show! want))
         ;; the aura is an emitter: it is fed every frame it shows, like any Jak 1 particle emitter
@@ -247,7 +252,8 @@
       (on?
        (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 200 (seconds 0.3))
        (sound-play "blue-eco-on")
-       (lj-aura-burst *target* 60 40))
+       (lj-aura-burst *target* 60 40)
+       (set! (-> *lj* powerup?) #t)) ;; the eco-vent arm-up pose, when he stands (lj-puppet-idle sends it)
       ((-> *lj* flying?) (lj-land! *target*))))
   (none))
 
