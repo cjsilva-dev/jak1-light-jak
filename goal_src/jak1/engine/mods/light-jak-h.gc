@@ -69,10 +69,15 @@
    (pose-apex         float)
    (pose-down         float)
    (pose-kick         float)
-   (pose-glide        float)
    (pose-range        float)      ;; vertical speed for the full up/down pose
    (pose-rate         float)      ;; aframes per second
    (pose-kick-rate    float)      ;; ... right after a flap
+   ;; the glide: Jak's swim stroke (eichar-swim-walk-ja, raw frames 0-33) held near its widest spread, swaying. The
+   ;; Deck screenshots of 2026-10-17 picked it over eleven loops: frames 0-3 and 15-18 spread, 9-12 tucked.
+   (pose-glide-mid    float)      ;; raw frame the sway centres on
+   (pose-glide-amp    float)      ;; frames either side
+   (pose-sway-hz      float)      ;; sways per second (x1.6 in a turbo)
+   (pose-blend        time-frame) ;; crossfade between the flying and the glide pose
    ;; ---- the look ----
    (glow              vector :inline) ;; added to Jak's emissive
    (mult              vector :inline) ;; on his colour
@@ -103,8 +108,9 @@
        :cam-dist (meters 8) :cam-height (meters 3) :cam-glide-dist (meters 10) :cam-glide-height (meters 4)
        :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-blend-in 3.0 :cam-blend-out 2.0
        :cam-radius (meters 0.6)
-       :pose-up 8.0 :pose-apex 20.0 :pose-down 33.0 :pose-kick 4.0 :pose-glide 29.0
+       :pose-up 8.0 :pose-apex 20.0 :pose-down 33.0 :pose-kick 4.0
        :pose-range (meters 12) :pose-rate 30.0 :pose-kick-rate 70.0
+       :pose-glide-mid 3.0 :pose-glide-amp 2.0 :pose-sway-hz 0.7 :pose-blend (seconds 0.2)
        :glow (new 'static 'vector :x 0.3 :y 0.42 :z 0.85 :w 0.0)
        :mult (new 'static 'vector :x 0.7 :y 0.82 :z 1.35 :w 1.0)
        :wing-glow (new 'static 'vector :x 0.55 :y 0.6 :z 0.7 :w 0.0)
@@ -129,6 +135,9 @@
    (glide-speed   float)
    (body-pitch    float)
    (pose-cur      float)
+   (pose-glide?   symbol)     ;; the pose showing is the glide pose (a change blends)
+   (pose-blend-at time-frame)
+   (pose-phase    float)      ;; the glide sway, degrees
    (cam-blend     float)
    (cam-pos       vector :inline)
    (wing-beat     float)      ;; position in the wings' flap cycle, frames
@@ -155,4 +164,5 @@
   (set! (-> *lj* hold-given) 0.0)
   (set! (-> *lj* glide-speed) 0.0)
   (set! (-> *lj* body-pitch) 0.0)
+  (set! (-> *lj* pose-glide?) #f)
   (none))

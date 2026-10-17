@@ -278,24 +278,44 @@
   (none))
 
 ;; ---- the flying pose, from target-post before the animation is evaluated (as Dark Flight's dark-flight-pose) ----
-;; Jak's jump animation held at a frame that follows his vertical speed: the rising frames while he climbs, the crest at
-;; the apex, the falling frames as he sinks, eased; a kick back to the wind-up on every flap; a glide frame (and the
-;; lean) while gliding.
+;; Flapping: Jak's jump animation held at a frame that follows his vertical speed (the rising frames while he climbs,
+;; the crest at the apex, the falling frames as he sinks, eased; a kick back to the wind-up on every flap). Gliding: his
+;; swim stroke held near its widest spread, swaying (a single jump frame tilted forward was "the bad one", Corey,
+;; 2026-10-17). A change between the two crossfades (ja-channel-push!: evaluate-joint-control runs the blend and drops
+;; the old channel when it is done); outside a crossfade any extra channel a jump state pushed is dropped.
 (defbehavior lj-flight-pose target ()
   (when (and (-> *lj* flying?) (lj-flight-state? (-> self state name)))
-    (let* ((vs (-> self control transv y))
-           (since (- (current-time) (-> *lj* flap-time)))
-           (t *lj-tune*)
-           (want (cond
-                   ((-> *lj* gliding?) (-> t pose-glide))
-                   ((< 0.0 vs) (lerp (-> t pose-apex) (-> t pose-up) (fmin 1.0 (/ vs (-> t pose-range)))))
-                   (else (lerp (-> t pose-apex) (-> t pose-down) (fmin 1.0 (/ (- vs) (-> t pose-range)))))))
-           (rate (if (< since (seconds 0.4)) (-> t pose-kick-rate) (-> t pose-rate)))
-           (step (* rate (seconds-per-frame)))
-           (cur (if (< since (seconds 0.04)) (-> t pose-kick) (-> *lj* pose-cur)))) ;; the flap's wind-up
-      (set! (-> *lj* pose-cur) (if (< cur want) (fmin want (+ cur step)) (fmax want (- cur step))))
-      (if (< 1 (-> self skel active-channels)) (ja-channel-set! 1))
-      (ja :group! eichar-jump-ja :num! (identity (ja-aframe (-> *lj* pose-cur) 0)))))
+    (let ((t *lj-tune*)
+          (glide? (-> *lj* gliding?)))
+      (cond
+        ((!= glide? (-> *lj* pose-glide?))
+         (set! (-> *lj* pose-glide?) glide?)
+         (set-time! (-> *lj* pose-blend-at))
+         (if glide? (set! (-> *lj* pose-phase) 0.0))
+         (ja-channel-push! 1 (-> t pose-blend)))
+        ((and (< 1 (-> self skel active-channels))
+              (time-elapsed? (-> *lj* pose-blend-at) (+ (-> t pose-blend) (seconds 0.05))))
+         (ja-channel-set! 1)))
+      (cond
+        (glide?
+         (let ((ph (+ (-> *lj* pose-phase)
+                      (* 360.0 (-> t pose-sway-hz) (seconds-per-frame)
+                         (if (cpad-hold? (-> self control cpad number) r1) 1.6 1.0)))))
+           (if (>= ph 360.0) (set! ph (- ph 360.0)))
+           (set! (-> *lj* pose-phase) ph)
+           (ja :group! eichar-swim-walk-ja
+               :num! (identity (+ (-> t pose-glide-mid) (* (-> t pose-glide-amp) (sin (degrees ph))))))))
+        (else
+         (let* ((vs (-> self control transv y))
+                (since (- (current-time) (-> *lj* flap-time)))
+                (want (if (< 0.0 vs)
+                        (lerp (-> t pose-apex) (-> t pose-up) (fmin 1.0 (/ vs (-> t pose-range))))
+                        (lerp (-> t pose-apex) (-> t pose-down) (fmin 1.0 (/ (- vs) (-> t pose-range))))))
+                (rate (if (< since (seconds 0.4)) (-> t pose-kick-rate) (-> t pose-rate)))
+                (step (* rate (seconds-per-frame)))
+                (cur (if (< since (seconds 0.04)) (-> t pose-kick) (-> *lj* pose-cur)))) ;; the flap's wind-up
+           (set! (-> *lj* pose-cur) (if (< cur want) (fmin want (+ cur step)) (fmax want (- cur step))))
+           (ja :group! eichar-jump-ja :num! (identity (ja-aframe (-> *lj* pose-cur) 0))))))))
   (none))
 
 ;; ---- the flight camera, from update-camera (cam-update.gc) ----
