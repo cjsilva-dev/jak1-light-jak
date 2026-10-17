@@ -103,8 +103,9 @@
                                   ;; loop banks to one side, Corey: "crooked") at this pace at cruise speed, faster as
                                   ;; the glide speeds up (Jak 3's true-flight-glide-pose); held still they looked frozen
    (wing-glide-min    float)      ;; pace multiplier bounds. Jak 3: loop rate 0.6 x speed/cruise in 0.4-1.6
-                                  ;; (*tf-glide-loop-rate* / -rate-min / -rate-max); here 30 fps x 0.6 = 18 at cruise,
-                                  ;; bounds 0.4/0.6 and 1.6/0.6
+                                  ;; (*tf-glide-loop-rate* / -rate-min / -rate-max). The pelican's stroke is ~14 frames
+                                  ;; (a short bird beat, not Light Jak's long swoop), so Jak 3's pace (18) flapped
+                                  ;; "way too fast" (Corey, 2026-10-17): 7 at cruise (a stroke every 2 s), x2 at most
    (wing-glide-max    float)
    (wing-blend        time-frame))) ;; crossfade between the wings' fly and glide loops
 
@@ -133,7 +134,7 @@
        :wing-glow (new 'static 'vector :x 0.55 :y 0.6 :z 0.7 :w 0.0)
        :wing-mult (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0)
        :wing-scale 0.55 :wing-shrink 0.15 :wing-up (meters 0.15) :wing-back (meters 0.25)
-       :wing-stroke 0.45 :wing-idle-fps 5.0 :wing-glide-fps 18.0 :wing-glide-min 0.67 :wing-glide-max 2.67 :wing-blend (seconds 0.3)))
+       :wing-stroke 0.45 :wing-idle-fps 5.0 :wing-glide-fps 7.0 :wing-glide-min 0.67 :wing-glide-max 2.0 :wing-blend (seconds 0.3)))
 
 (deftype lj-state (structure)
   ((on?           symbol)     ;; Light Jak form on (R3 toggles)
