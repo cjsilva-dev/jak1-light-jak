@@ -2,11 +2,16 @@
 # usage (inside jak.py session; boots the game): lj-mapscan.sh <out file> level=continue [level=continue ...]
 # Teleports to each continue, waits for the level to be active, scans it (lj-mapscan.gc); appends MS/MR/MSEND lines
 # to <out file> (skips levels already in it). Then on the Mac: mapgen.py jak1 <out file> <repo>/goal_src/jak1.
+# Your setup, by environment variable (the defaults are the author's Steam Deck):
+#   LJ_GAME  the install: <LJ_GAME>/data/goal_src/jak1 is its source tree, <LJ_GAME>/data/log its game logs
+#   LJ_ASK   a script that sends one GOAL form to the running game's REPL and waits $WAIT seconds
+#   LJ_BOOT  a script that boots the game in debug mode with a goalc REPL in tmux (socket goal1, session goal)
+#   LJ_SCAN  where lj-mapscan.gc is (copied into the source tree)
 out=$1; shift
-A=/tmp/wj-ask.sh; P=/home/deck/jak-proto/white-jak
-cp /tmp/lj-mapscan.gc $P/data/goal_src/jak1/
+A=${LJ_ASK:-/tmp/wj-ask.sh}; P=${LJ_GAME:-/home/deck/jak-proto/white-jak}
+cp "${LJ_SCAN:-/tmp/lj-mapscan.gc}" $P/data/goal_src/jak1/
 if ! tmux -L goal1 has-session -t goal 2>/dev/null || ! pgrep -x gk >/dev/null; then
-  /tmp/wj-boot.sh >/dev/null || { echo "FAIL boot"; exit 1; }
+  "${LJ_BOOT:-/tmp/wj-boot.sh}" >/dev/null || { echo "FAIL boot"; exit 1; }
   sleep 3
 fi
 WAIT=6 $A '(ml "goal_src/jak1/lj-mapscan.gc")' >/dev/null

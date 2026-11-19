@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn an on-device ground scan (mapscan.sh output: MS/MR/MSEND lines) into flight-map.gc.
+"""Turn an on-device ground scan (MS/MR/MSEND lines: mapscan.sh for Jak II / 3, lj-mapscan.sh for Jak 1) into flight-map.gc.
 
 usage: mapgen.py <jak1|jak2|jak3> <scan.txt> <repo goal_src/jakN dir> [--preview out.txt] [--skip a,b]
 
@@ -135,14 +135,16 @@ def emit(game, levels, path, grp):
     o.append(';;')
     for i, n in enumerate(names):
         lv = levels[n]
-        o.append(f';;   {n:10s} area {grp[i]}  {lv["nx"]:3d} x {lv["nz"]:3d} cells at ({lv["x0"]*16}, {lv["z0"]*16}) m, {lv["hits"]} with ground')
+        area = '' if game == 'jak1' else f'area {grp[i]}  '
+        o.append(f';;   {n:10s} {area}{lv["nx"]:3d} x {lv["nz"]:3d} cells at ({lv["x0"]*16}, {lv["z0"]*16}) m, {lv["hits"]} with ground')
     o.append('')
     o.append('(defconstant FS-MAP-CELL (meters 16))')
     o.append("(define *fs-map-names* (new 'static 'boxed-array :type symbol")
     o.append('                         ' + ' '.join("'" + n for n in names) + '))')
-    o.append(';; the area each level belongs to: levels some checkpoint of the game loads together (worlds overlap')
-    o.append(';; in coordinates -- Jak 3\'s Haven and Spargus do -- so a lookup only answers within Jak\'s area)')
-    o.append(f"(define *fs-map-groups* (new 'static 'array uint8 {len(grp)} " + ' '.join(str(g) for g in grp) + '))')
+    if game != 'jak1':  # Jak 1 is one world in one coordinate space: no areas, no flight wall
+        o.append(';; the area each level belongs to: levels some checkpoint of the game loads together (worlds overlap')
+        o.append(';; in coordinates -- Jak 3\'s Haven and Spargus do -- so a lookup only answers within Jak\'s area)')
+        o.append(f"(define *fs-map-groups* (new 'static 'array uint8 {len(grp)} " + ' '.join(str(g) for g in grp) + '))')
     o.append(';; per level: x0 z0 (in cells) nx nz, and where its grid starts in *fs-map-cells*')
     o.append(f"(define *fs-map-dims* (new 'static 'array int32 {len(dims)}")
     for i in range(0, len(dims), 5):
@@ -152,6 +154,9 @@ def emit(game, levels, path, grp):
     for i in range(0, len(cells), 40):
         o.append('  ' + ' '.join(str(v) for v in cells[i:i + 40]))
     o.append('  ))')
+    if game == 'jak1':
+        open(path, 'w').write('\n'.join(o) + '\n')
+        return len(cells)
     # the cells a flying Jak may be over, one grid per area (the flight wall)
     ar = areas(levels, grp)
     adims = []; acells = []

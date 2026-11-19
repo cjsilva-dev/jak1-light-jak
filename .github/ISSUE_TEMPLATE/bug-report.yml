@@ -64,5 +64,5 @@ body:
       label: Game log (especially for crashes)
       description: |
         Drag the newest log file in here. It's in your OpenGOAL install folder (the one you picked in the launcher):
-        `features/jak1/mods/<the mod source's name>/light-jak/data/log/`
+        `features/jak1/mods/Dark Flight & True Flight/light-jak/data/log/`
         If the mod failed to install or build, the launcher's own logs help instead: Linux/Steam Deck `~/.local/share/OpenGOAL-Launcher/logs`, Windows `%APPDATA%\OpenGOAL-Launcher\logs`.

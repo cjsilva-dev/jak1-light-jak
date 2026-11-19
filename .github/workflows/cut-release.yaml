@@ -67,9 +67,17 @@ jobs:
           if [[ ${{ inputs.binary_source == 'vanilla' }} ]]; then REPO=open-goal/jak-project; fi
           echo "REPO=$REPO" >> $GITHUB_OUTPUT
 
+  release_guard:
+    name: "Release guard"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse content that must never ship from this repository
+        run: bash .github/scripts/release-guard.sh
+
   cut_mod_release:
     name: "Cut Mod Release"
-    needs: prep_vars
+    needs: [prep_vars, release_guard]
     uses: ./.github/workflows/mod-release-pipeline.yml
     with:
       semverBump: ${{ inputs.bump }}

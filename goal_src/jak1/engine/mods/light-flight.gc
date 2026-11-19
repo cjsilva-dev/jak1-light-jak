@@ -44,7 +44,7 @@
 (define *lj-dash-mods*     (let ((t *lj-tune*)) ;; *tf-dark-dash-mods*: the fast surface without steering or friction
                              (lj-make-surface *jump-mods* 'lightjak-dash (-> t fly-turnv) (-> t fast-speed) (-> t fast-speed) 0.0 0.0)))
 
-;; ---- the lean: a callback on Jak's main bone (node 3), put on at takeoff; takes itself off once upright and done ----
+;; ---- the lean: a callback on Jak's main bone, put on at takeoff; takes itself off once upright and done ----
 (defun lj-main-joint ((node cspace) (tq transformq))
   (let ((want (if (and (-> *lj* flying?) (-> *lj* gliding?)) (-> *lj-tune* glide-pitch) 0.0))
         (cur (-> *lj* body-pitch)))
@@ -62,6 +62,12 @@
 ;; ---- physics: True Flight's Light Jak (true-flight-flap-speed / -flap-hold / the glide), the same maths ----
 (defbehavior lj-vertical-speed target ()
   (vector-dot (-> self control dynam gravity-normal) (-> self control transv)))
+
+(defbehavior lj-set-vertical-speed! target ((v float))
+  "Set the speed along Jak's up to V, keeping the horizontal speed."
+  (vector+float*! (-> self control transv) (-> self control transv) (-> self control dynam gravity-normal)
+                  (- v (lj-vertical-speed)))
+  (none))
 
 (defbehavior lj-horizontal-speed target ()
   (let* ((up (-> self control dynam gravity-normal))
@@ -83,11 +89,10 @@
 (defbehavior lj-flap-lift target ()
   "One flap, after its wind-up: the climb replaces the vertical speed (horizontal kept). Out of a glide it is the big
    launch. Then holding X keeps lifting (lj-hold-tick)."
-  (let* ((vs (lj-vertical-speed))
-         (climb (if (-> *lj* from-glide?)
-                  (fmin (-> *lj-tune* big-flap-cap) (+ (-> *lj-tune* big-flap-impulse) (fmax 0.0 vs)))
-                  (fmin (-> *lj-tune* climb-cap) (+ (-> *lj-tune* flap-impulse) (fmax 0.0 vs))))))
-    (vector+float*! (-> self control transv) (-> self control transv) (-> self control dynam gravity-normal) (- climb vs)))
+  (let ((vs (lj-vertical-speed)))
+    (lj-set-vertical-speed! (if (-> *lj* from-glide?)
+                              (fmin (-> *lj-tune* big-flap-cap) (+ (-> *lj-tune* big-flap-impulse) (fmax 0.0 vs)))
+                              (fmin (-> *lj-tune* climb-cap) (+ (-> *lj-tune* flap-impulse) (fmax 0.0 vs))))))
   (set! (-> *lj* from-glide?) #f)
   (set! (-> *lj* holding?) #t)
   (set! (-> *lj* hold-given) 0.0)
@@ -103,13 +108,13 @@
       (let ((vs (lj-vertical-speed)))
         (set! dv (fmin (- (-> *lj-tune* hold-bonus) (-> *lj* hold-given)) (* (-> *lj-tune* hold-accel) (seconds-per-frame))))
         (set! dv (fmax 0.0 (fmin dv (- (+ (-> *lj-tune* climb-cap) (-> *lj-tune* hold-bonus)) vs))))
-        (when (< (meters 0.01) dv)
+        (when (< (-> *lj-tune* hold-min) dv)
           (set! (-> *lj* hold-given) (+ (-> *lj* hold-given) dv))
           (vector+float*! (-> self control transv)
                           (-> self control transv)
                           (-> self control dynam gravity-normal)
                           (+ dv (* (-> self control dynam gravity-length) (seconds-per-frame)))))))
-    (if (<= dv (meters 0.01)) (set! (-> *lj* holding?) #f)))
+    (if (<= dv (-> *lj-tune* hold-min)) (set! (-> *lj* holding?) #f)))
   (none))
 
 (defbehavior lj-glide target ()
@@ -144,7 +149,7 @@
           (if turbo?
             (fmin (-> *lj-tune* glide-turbo-max) (-> *lj* glide-speed))
             (fmin (-> *lj* glide-speed) (fmax (-> *lj-tune* glide-max) before))))
-    (vector+float*! tv tv up (- vs (vector-dot up tv))) ;; the (possibly caught) sink
+    (lj-set-vertical-speed! vs) ;; the (possibly caught) sink
     (lj-horizontal-push (-> *lj* glide-speed))
     (set! (-> self control mod-surface) *lj-glide-mods*)) ;; (the jump states reset the surface every frame)
   (none))
@@ -157,22 +162,20 @@
     (sound-play "jump" :pitch (-> *lj-tune* dash-pitch)))
   (when (and (not (time-elapsed? (-> *lj* dash-start) (-> *lj-tune* dash-time))) (not (-> *lj* gliding?)))
     (lj-horizontal-push (-> *lj-tune* dash-speed))
-    (let ((vs (lj-vertical-speed))) ;; a level lunge: no sinking during it
-      (if (< vs 0.0)
-        (vector+float*! (-> self control transv) (-> self control transv) (-> self control dynam gravity-normal) (- vs))))
+    (if (< (lj-vertical-speed) 0.0) (lj-set-vertical-speed! 0.0)) ;; a level lunge: no sinking during it
     (set! (-> self control mod-surface) *lj-dash-mods*))
   (none))
 
 ;; ---- the transitions ----
 (defbehavior lj-takeoff! target ()
-  "The flight begins (the first flap, or L1 held in the air): flight gravity, the lean hook on his main bone. Jak's
+  "The flight begins (the first flap, or an L1 press in the air): flight gravity, the lean hook on his main bone. Jak's
    bones are new after every respawn, so the hook goes on here, not at load."
   (when (not (-> *lj* flying?))
     (set! (-> *lj* flying?) #t)
     (set! (-> *lj* gliding?) #f)
     (set! (-> self control dynam gravity-length) (-> *lj-tune* gravity))
     (set! (-> self control dynam gravity-max) (-> *lj-tune* gravity-max))
-    (set! (-> self node-list data 3 param0) lj-main-joint))
+    (set! (-> self node-list data (joint-node-index eichar-lod0-jg main) param0) lj-main-joint))
   (none))
 
 (defun lj-land! ((jak target))
@@ -185,7 +188,7 @@
     ;; the game's own camera ran on underneath the flight camera, trailing far behind a fast flight; the flight camera
     ;; blends back to it, so put it back behind Jak first (Corey, 2026-11-19: "when you land the camera goes nuts and
     ;; zooms out")
-    (set! (-> *lj* cam-reset?) #t)
+    (if (< 0.0 (-> *lj* cam-blend)) (set! (-> *lj* cam-reset?) #t))
     (set! (-> jak control last-trans-any-surf quad) (-> jak control trans quad))
     (set! (-> jak control dynam gravity-length) (-> jak control standard-dynamics gravity-length))
     (set! (-> jak control dynam gravity-max) (-> jak control standard-dynamics gravity-max)))
@@ -225,7 +228,10 @@
     ;; a flap: not on the double jump's own press (its state starts on it), so not in its first frames
     (when (and (cpad-pressed? (-> self control cpad number) x)
                (or (-> *lj* flying?)
+                   ;; target-jump-forward is the jump out of an edge grab: it runs target-jump's :trans, so it
+                   ;; has the double jump too
                    (not (or (= (-> self state name) 'target-jump)
+                            (= (-> self state name) 'target-jump-forward)
                             (and (= (-> self state name) 'target-double-jump)
                                  (not (time-elapsed? (-> self state-time) (-> *lj-tune* flap-guard))))))))
       (logclear! (-> *cpad-list* cpads (-> self control cpad number) button0-rel 0) (pad-buttons x))
@@ -243,9 +249,7 @@
          (set! (-> *lj* flap-pending?) #f)
          (lj-flap-lift))
         (else
-         (let ((vs (lj-vertical-speed)))
-           (vector+float*! (-> self control transv) (-> self control transv) (-> self control dynam gravity-normal)
-                           (- (* (-> *lj-tune* windup-damp) vs) vs))))))
+         (lj-set-vertical-speed! (* (-> *lj-tune* windup-damp) (lj-vertical-speed))))))
     (lj-hold-tick)
     ;; an L1 PRESS in the air takes off into a glide. Not a hold: L1 is Jak 1's crouch, and holding it into a crouch
     ;; jump took off at once (review, 2026-10-17)
@@ -363,7 +367,7 @@
         (ja :chan 1 :group! eichar-jump-ja :num! (identity f) :frame-interp (* w (-> t flap-weight))))
       ;; 2: glide
       (let ((g (-> *lj* pose-glide-w))
-            (gstep (/ dt (* (the float (-> t pose-blend)) (/ 1.0 300.0)))))
+            (gstep (/ dt (lj-seconds (-> t pose-blend)))))
         (set! g (if (-> *lj* gliding?) (fmin 1.0 (+ g gstep)) (fmax 0.0 (- g gstep))))
         (set! (-> *lj* pose-glide-w) g)
         (if (= g 0.0) (set! (-> *lj* pose-phase) 0.0))
@@ -387,10 +391,12 @@
 (defun lj-camera ()
   (let ((jak *target*)
         (want (if (and (-> *lj* flying?) (lj-form-active?)) 1.0 0.0))
-        (dt (seconds-per-frame))
+        ;; paused, nothing moves but the view is still written: update-camera runs through a pause, and the game camera
+        ;; it copies in first sits below a flying Jak
+        (dt (if (paused?) 0.0 (seconds-per-frame)))
         (t *lj-tune*)
         (pos (-> *lj* cam-pos)))
-    (when (and jak (not (paused?)))
+    (when jak
       (if (and (= (-> *lj* cam-blend) 0.0) (< 0.0 want)) (set! (-> pos quad) (-> *math-camera* trans quad)))
       (set! (-> *lj* cam-blend) (if (< (-> *lj* cam-blend) want)
                                   (fmin want (+ (-> *lj* cam-blend) (* (-> t cam-blend-in) dt)))
@@ -411,7 +417,7 @@
           ;; string follow: keep the current heading from the camera to Jak
           (vector-! dir tgt pos)
           (set! (-> dir y) 0.0)
-          (if (< (vector-length dir) (meters 0.5)) (vector-z-quaternion! dir (-> jak control quat)))
+          (if (< (vector-length dir) (-> t cam-close)) (vector-z-quaternion! dir (-> jak control quat)))
           (set! (-> dir y) 0.0)
           (vector-normalize! dir 1.0)
           ;; swing in behind the flight path when moving fast
@@ -431,7 +437,7 @@
                                                       (the-as process #f) hit
                                                       (new 'static 'pat-surface :nocamera #x1 :nolineofsight #x1))))
             (when (and (< 0.0 f) (< f 1.0))
-              (vector+float*! pos tgt ray (fmax 0.15 (- f 0.05)))
+              (vector+float*! pos tgt ray (fmax (-> t cam-hit-min) (- f (-> t cam-hit-back))))
               (set! (-> pos w) 1.0)))
           ;; blend position and facing with the game camera's
           (vector-lerp! gp (-> *math-camera* trans) pos (-> *lj* cam-blend))

@@ -9,8 +9,9 @@ Files here:
 - `lj-mapscan.gc`: dev-only GOAL file. Loaded into a debug boot of the game through the REPL, it casts four rays per
   cell against one level's collision and prints the result to the game log.
 - `lj-mapscan.sh`: runs the scan for a list of levels (teleports to a continue point of each). It expects the game
-  booted in debug with a goalc REPL in tmux (socket `goal1`) and a helper that sends a form and waits
-  (`/tmp/wj-ask.sh` in the author's setup); adapt those two lines to your own.
+  booted in debug with a goalc REPL in tmux (socket `goal1`) and a helper that sends a form and waits. Point it at
+  your setup with `LJ_GAME` (the install), `LJ_ASK` (the send-and-wait helper), `LJ_BOOT` (the debug boot) and
+  `LJ_SCAN` (this folder's `lj-mapscan.gc`); the defaults are the author's Steam Deck.
 - `scan-jak1.txt`: the raw scan this repo's map was generated from (the twelve outdoor levels: village1 beach
   training jungle misty firecanyon village2 swamp rolling ogre village3 snow).
 - `mapgen.py`: turns a scan into `flight-map.gc` (the same generator as Dark Flight's and True Flight's, `jak1` mode).

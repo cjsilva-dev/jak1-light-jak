@@ -1,0 +1,22 @@
+name: Release guard
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  release_guard:
+    name: "Release guard"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse content that must never ship from this repository
+        run: bash .github/scripts/release-guard.sh

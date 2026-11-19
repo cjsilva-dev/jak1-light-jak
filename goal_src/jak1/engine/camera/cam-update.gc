@@ -215,9 +215,6 @@
 
 (define *start-pos* (new 'global 'vector))
 
-;; LIGHT JAK: called after the game camera is copied into *math-camera* (light-flight.gc's flight camera)
-(define *lj-cam-hook* (the-as (function none) #f))
-
 (defun update-camera ()
   (when *start-timer*
     (when (= *timer-value* 180)
