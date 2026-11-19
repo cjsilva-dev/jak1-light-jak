@@ -183,7 +183,7 @@
    a flight is never a fall: target-hit-ground measures the drop from last-trans-any-surf (a long one stuns Jak), so it
    starts here. Every flight state exits (here) before the landing state's :enter runs."
   (when (-> *lj* flying?)
-    (fs-vis-land (-> jak control trans)) ;; vis again, for the level he lands in (flight-stream.gc rule 6)
+    (fs-vis-land (-> jak control trans)) ;; the checkpoint, and vis back once it is safe (flight-stream.gc rule 6)
     (lj-reset!)
     ;; the game's own camera ran on underneath the flight camera, trailing far behind a fast flight; the flight camera
     ;; blends back to it, so put it back behind Jak first (Corey, 2026-11-19: "when you land the camera goes nuts and
