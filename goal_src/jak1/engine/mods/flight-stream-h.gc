@@ -17,13 +17,4 @@
 (define *fs-want-levels-hook* (the-as (function none) #f))          ;; called at the end of want-levels (load-boundary.gc)
 (define *fs-endlessfall-hook* (the-as (function symbol symbol) #f)) ;; asked before an endless-fall death: 'line
                                                                     ;; (logic-target.gc) or 'surface (collide-shape.gc)
-(define *fs-vis-hold?* #f)     ;; while flying: no vis (want-vis in load-boundary.gc is held; flight-stream.gc rule 6)
-(define *fs-vis-landed?* #f)   ;; ... and after the landing until the camera is inside one level only (fs-vis-settle)
-
-(defun fs-reset! ()
-  "A flight cut off without a landing (a load, a death, a new game): vis back on."
-  (when *fs-vis-hold?*
-    (set! *artist-all-visible* #f)
-    (set! *fs-vis-hold?* #f))
-  (set! *fs-vis-landed?* #f)
-  (none))
+(define *fs-vis-hold?* #f) ;; while flying and just after: no vis (want-vis in load-boundary.gc is held; flight-stream.gc rule 6)

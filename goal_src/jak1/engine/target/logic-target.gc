@@ -969,10 +969,10 @@
   (target-powerup-process)
   (none))
 
-(define-extern lj-flight-pose (function none :behavior target)) ;; LIGHT JAK (engine/mods/light-flight.gc)
+(define-extern lj-post (function none :behavior target)) ;; LIGHT JAK (engine/mods/light-flight.gc)
 
 (defbehavior target-post target ()
-  (lj-flight-pose) ;; LIGHT JAK: the flying pose, set before the animation is evaluated
+  (lj-post) ;; LIGHT JAK: the flying pose (set before the animation is evaluated) and the after-landing checks
   (target-real-post)
   (none))
 

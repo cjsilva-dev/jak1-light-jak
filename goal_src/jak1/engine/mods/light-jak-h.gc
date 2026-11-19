@@ -218,7 +218,7 @@
 (defun lj-reset! ()
   "The flight's own state, cleared: when a flight ends and at Jak's birth (a new game, a load, a death). Not cleared:
    the camera blend (it fades back out on its own), the dash timer (its cooldown spans flights), the requests to the
-   puppet's process (lj-form-spawn clears those), the streamer's (fs-reset!, flight-stream-h.gc)."
+   puppet's process (lj-form-spawn clears those), the streamer's (fs-reset!, flight-stream.gc)."
   (set! (-> *lj* flying?) #f)
   (set! (-> *lj* gliding?) #f)
   (set! (-> *lj* holding?) #f)
