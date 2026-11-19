@@ -62,6 +62,7 @@
   (set! (-> self on-ground)
         (not (and (logtest? (-> *target* control mod-surface flags) (surface-flags jump))
                   (not (logtest? (-> *target* control status) (cshape-moving-flags onsurf)))
+                  ;; LIGHT JAK: a flight is tracked like the ground (the air mode lets Jak climb off the top of the screen)
                   (not (-> *lj* flying?)))))
   (set! (-> self on-pole) #f)
   (set! (-> self ease-t) 1.0)
@@ -276,12 +277,14 @@
              (set! (-> self on-ground)
                    (not (and (logtest? (-> *target* control mod-surface flags) (surface-flags jump))
                              (not (logtest? (-> *target* control status) (cshape-moving-flags onsurf)))
+                             ;; LIGHT JAK: a flight is tracked like the ground
                              (not (-> *lj* flying?)))))
              (let ((gp-6 (new-stack-vector0)))
                0.0
                (cond
                  ((and (and (logtest? (-> *target* control mod-surface flags) (surface-flags jump))
                             (not (logtest? (-> *target* control status) (cshape-moving-flags onsurf)))
+                            ;; LIGHT JAK: no air-mode height tracking in a flight
                             (not (-> *lj* flying?)))
                        (!= (-> *target* control mod-surface name) 'launch-jump))
                   (if *display-cam-los-debug* (format *stdcon* "air tracking~%"))

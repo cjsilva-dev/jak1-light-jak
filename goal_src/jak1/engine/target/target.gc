@@ -84,6 +84,7 @@
 (define-extern lj-flight-air (function none :behavior target))
 (define-extern lj-slam-tick (function none :behavior target))
 (define-extern lj-slam-land (function none :behavior target))
+(define-extern lj-flop-exit (function none :behavior target))
 
 (defbehavior target-falling-trans target ((arg0 basic) (arg1 time-frame))
   (if (and (cpad-pressed? (-> self control cpad number) circle) (can-feet?)) (go target-attack-air #f))
@@ -1627,7 +1628,8 @@
       (target-danger-set! 'harmless #f)
       (set! (-> self control dynam gravity-max) (-> self control standard-dynamics gravity-max))
       (set! (-> self control dynam gravity-length) (-> self control standard-dynamics gravity-length))
-      (set! (-> self control dynam gravity quad) (-> self control standard-dynamics gravity quad)))
+      (set! (-> self control dynam gravity quad) (-> self control standard-dynamics gravity quad))
+      (lj-flop-exit)) ;; LIGHT JAK: a superhero landing that ends off the ground ends the flight (this :exit skips target-exit)
   :trans
     (behavior ()
       (lj-slam-tick) ;; LIGHT JAK: the superhero landing's plunge

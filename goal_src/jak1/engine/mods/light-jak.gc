@@ -14,7 +14,9 @@
 ;; common_art_groups (decompiler/config/jak1/jak1_config.jsonc), the art group through GAME.CGO (dgos/game.gd).
 ;;
 ;; The puppet (and the wings) are children of Jak, spawned with him in init-target (logic-target.gc): they die with
-;; him and come back with him, so nothing polls for them. R3 toggles the form (lj-form-input, runs-every-frame).
+;; him and come back with him, and their bone maps are built then, once. Per frame: the bone copy (it follows the
+;; animation), the show/hide check in the puppet's :trans (a transition on change), the aura emitter (Jak 1 emitters
+;; are fed every frame) and the R3 poll (lj-form-input, runs-every-frame).
 
 (defskelgroup *lj-puppet-sg*
   jak-white
@@ -24,9 +26,13 @@
   :bounds (static-spherem 0 0 0 4))
 
 (defconstant LJ_MAX_NODES 96)
+;; the aura's particle ids (parts 3500 3502, group 1000 below; the game's own top out at 2968 / 708)
+(defconstant LJ_PART_PUFF 3500)
+(defconstant LJ_PART_SPARK 3502)
+(defconstant LJ_PART_GROUP 1000)
 
 (deftype lj-puppet (process-drawable)
-  ((bone-map   int16 96) ;; for each of our nodes, Jak's node with the same joint name (-1 = none)
+  ((bone-map   int16 96) ;; LJ_MAX_NODES: for each of our nodes, Jak's node with the same joint name (-1 = none)
    (node-count int32)
    (mapped?    symbol)
    (shown?     symbol))   ;; drawn last frame (the show/hide transitions are made on the change)
@@ -93,9 +99,9 @@
 (defun lj-aura-burst ((pd process-drawable) (puffs int) (sparks int))
   "A burst of the aura around a process: the transformation, the superhero landing."
   (dotimes (i puffs)
-    (launch-particles (-> *part-id-table* 3500) (process-drawable-random-point! pd (new 'stack-no-clear 'vector))))
+    (launch-particles (-> *part-id-table* LJ_PART_PUFF) (process-drawable-random-point! pd (new 'stack-no-clear 'vector))))
   (dotimes (i sparks)
-    (launch-particles (-> *part-id-table* 3502) (process-drawable-random-point! pd (new 'stack-no-clear 'vector))))
+    (launch-particles (-> *part-id-table* LJ_PART_SPARK) (process-drawable-random-point! pd (new 'stack-no-clear 'vector))))
   (none))
 
 (defbehavior lj-puppet-build-map lj-puppet ((jak target))
@@ -104,6 +110,8 @@
         (his (-> jak node-list))
         (missing 0))
     (set! (-> self node-count) (min (-> ours length) LJ_MAX_NODES))
+    (if (< LJ_MAX_NODES (-> ours length))
+      (format 0 "light-jak: the puppet has ~D bones, only ~D are copied~%" (-> ours length) LJ_MAX_NODES))
     (set! (-> self bone-map 0) 0)
     (countdown (k (+ (-> self node-count) -1))
       (let* ((i (+ k 1))
@@ -129,12 +137,12 @@
        (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))
        (zero? (-> *target* draw death-timer))))
 
-(defun lj-eyes ((wj lj-puppet) (jak target))
+(defun lj-eyes ((pup lj-puppet) (jak target))
   "Jak 1 draws eyes into a texture per eye slot (update-eyes, eye.gc), only for a slot whose process has the eye bit
    and was drawn. Jak is not drawn while the puppet stands in, so his slot would go black: the puppet's slot takes the
    puppet's own eye shaders and Jak's live eye data, with the iris and pupil scaled away (Light Jak's eyes glow white)."
   (let ((his-ctrl (-> jak draw mgeo header eye-ctrl))
-        (our-ctrl (-> wj draw mgeo header eye-ctrl)))
+        (our-ctrl (-> pup draw mgeo header eye-ctrl)))
     (when (and (nonzero? his-ctrl) (nonzero? our-ctrl))
       (let ((src (-> *eye-control-array* data (-> his-ctrl eye-slot)))
             (dst (-> *eye-control-array* data (-> our-ctrl eye-slot))))
@@ -148,9 +156,8 @@
         (set! (-> dst left data 1 y) 0.0)
         (set! (-> dst right data 1 x) 0.0)
         (set! (-> dst right data 1 y) 0.0)
-        (set! (-> dst process) (process->handle wj))
-        (set! (-> dst shaders) (the-as (inline-array adgif-shader) (-> our-ctrl iris-shader)))
-        (logior! (-> wj skel status) (janim-status eye)))))
+        (set! (-> dst process) (process->handle pup))
+        (set! (-> dst shaders) (the-as (inline-array adgif-shader) (-> our-ctrl iris-shader))))))
   (none))
 
 (define-extern lj-wings-place (function target none)) ;; light-wings.gc
@@ -158,24 +165,24 @@
 (defun lj-form-postbind ((jak target))
   "From Jak's postbind (target-joint-callback-pc): after his joint math, before the draw. Copy his pose onto the puppet
    and place the wings. This is the one per-frame job of the form, and it has to be: it follows the animation."
-  (let ((wj (the-as lj-puppet (handle->process (-> *lj* puppet)))))
-    (when (and wj (-> wj shown?))
-      (let ((dst (-> wj node-list))
+  (let ((pup (the-as lj-puppet (handle->process (-> *lj* puppet)))))
+    (when (and pup (-> pup shown?))
+      (let ((dst (-> pup node-list))
             (src (-> jak node-list)))
-        (dotimes (i (-> wj node-count))
-          (let ((j (-> wj bone-map i)))
+        (dotimes (i (-> pup node-count))
+          (let ((j (-> pup bone-map i)))
             (when (>= j 0)
               (matrix-copy! (-> dst data i bone transform) (-> src data j bone transform))
               (set! (-> dst data i bone scale quad) (-> src data j bone scale quad))))))
-      (lj-eyes wj jak)
+      (lj-eyes pup jak)
       ;; the renderer culls on origin + bounds
-      (set! (-> wj root trans quad) (-> jak root trans quad))
-      (set! (-> wj draw origin quad) (-> jak draw origin quad))
-      (set! (-> wj draw light-index) (-> jak draw light-index))
-      (vector*! (-> wj draw color-mult) (-> jak draw color-mult) (-> *lj-tune* mult))
-      (set! (-> wj draw color-mult w) (-> jak draw color-mult w))
-      (vector+! (-> wj draw color-emissive) (-> jak draw color-emissive) (-> *lj-tune* glow))
-      (set! (-> wj draw color-emissive w) 0.0)))
+      (set! (-> pup root trans quad) (-> jak root trans quad))
+      (set! (-> pup draw origin quad) (-> jak draw origin quad))
+      (set! (-> pup draw light-index) (-> jak draw light-index))
+      (vector*! (-> pup draw color-mult) (-> jak draw color-mult) (-> *lj-tune* mult))
+      (set! (-> pup draw color-mult w) (-> jak draw color-mult w))
+      (vector+! (-> pup draw color-emissive) (-> jak draw color-emissive) (-> *lj-tune* glow))
+      (set! (-> pup draw color-emissive w) 0.0)))
   (lj-wings-place jak)
   (none))
 
@@ -194,7 +201,6 @@
 (defstate lj-puppet-idle (lj-puppet)
   :trans
     (behavior ()
-      (if (and (not (-> self mapped?)) *target*) (lj-puppet-build-map *target*))
       ;; the R3 switch's pose: the game's own eco-vent powerup (arm up). Its 'powerup event only starts it from
       ;; standing or walking; in the air the burst alone shows the switch. Sent from here: an event needs a sender.
       (when (-> *lj* powerup?)
@@ -216,20 +222,24 @@
   ((method-of-type process-drawable deactivate) this)
   (none))
 
-(defbehavior lj-puppet-init-by-other lj-puppet ()
-  (set! (-> self root) (new 'process 'trsqv))
-  (if *target* (set! (-> self root trans quad) (-> *target* root trans quad)))
-  (initialize-skeleton self *lj-puppet-sg* '())
-  (set! (-> self part) (create-launch-control (-> *part-group-id-table* 1000) self)) ;; group-lj-aura, by id
+(defbehavior lj-puppet-init-by-other lj-puppet ((jak target))
+  ;; the flags first: initialize-skeleton goes to process-drawable-art-error on missing art, and a puppet left there must
+  ;; read as not mapped and not shown (lj-form-postbind skips it)
   (set! (-> self mapped?) #f)
   (set! (-> self shown?) #f)
+  (set! (-> self root) (new 'process 'trsqv))
+  (set! (-> self root trans quad) (-> jak root trans quad))
+  (initialize-skeleton self *lj-puppet-sg* '())
+  (set! (-> self part) (create-launch-control (-> *part-group-id-table* LJ_PART_GROUP) self)) ;; group-lj-aura, by id
+  (lj-puppet-build-map jak)
+  ;; the eye slot (lj-eyes); nothing in the engine clears this bit
+  (logior! (-> self skel status) (janim-status eye))
   ;; never animated or joint-mathed itself: its bones are written by lj-form-postbind
   (logior! (-> self draw status) (draw-status hidden))
   (go lj-puppet-idle)
   (none))
 
-(define-extern lj-wings-init-by-other (function none :behavior process-drawable)) ;; light-wings.gc
-(define-extern lj-wings-spawn (function target none))
+(define-extern lj-wings-spawn (function target none)) ;; light-wings.gc
 (define-extern lj-land! (function target none)) ;; light-flight.gc
 
 (defun lj-form-spawn ((jak target))
@@ -237,7 +247,7 @@
    cut off by his death or a load is over too."
   (lj-reset!)
   (set! (-> *lj* hidden-proc) (the-as process-drawable #f))
-  (let ((p (process-spawn lj-puppet :to jak)))
+  (let ((p (process-spawn lj-puppet jak :to jak)))
     (set! (-> *lj* puppet) (if p (ppointer->handle p) (the-as handle #f)))
     (if (not p) (format 0 "light-jak: no memory for the puppet~%")))
   (lj-wings-spawn jak)
@@ -250,14 +260,15 @@
   (when *target*
     (cond
       (on?
-       (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 200 (seconds 0.3))
+       (cpad-set-buzz! (-> *cpad-list* cpads (-> *target* control cpad number)) 1 (-> *lj-tune* switch-buzz)
+                       (-> *lj-tune* switch-buzz-time))
        (sound-play "blue-eco-on")
-       (lj-aura-burst *target* 60 40)
+       (lj-aura-burst *target* (-> *lj-tune* switch-puffs) (-> *lj-tune* switch-sparks))
        (set! (-> *lj* powerup?) #t)) ;; the eco-vent arm-up pose, when he stands (lj-puppet-idle sends it)
       ((-> *lj* flying?) (lj-land! *target*))))
   (none))
 
 (defun lj-form-input ()
   "Every frame (runs-every-frame): the R3 toggle. Input is the one thing that has to be polled."
-  (if (cpad-pressed? 0 r3) (lj-form-switch! (not (-> *lj* on?))))
+  (if (cpad-pressed? (if *target* (-> *target* control cpad number) 0) r3) (lj-form-switch! (not (-> *lj* on?))))
   (none))

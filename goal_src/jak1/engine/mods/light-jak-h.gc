@@ -46,6 +46,19 @@
    (dash-time         time-frame) ;; (*fc-dash-time*)
    (dash-cooldown     time-frame) ;; (*fc-dash-cooldown*)
    (glide-launch      time-frame) ;; a flap pauses the glide this long (Jak 3: swoop-again plays out first; *fc-launch-time*)
+   (flap-guard        time-frame) ;; a press this early in the double jump is the double jump's own, not a flap
+   ;; ---- the movement surfaces (copies of Jak 1's jump surface; lj-tune-lint checks them against True Flight's
+   ;; *lightjak-swoop-mods*, *lightjak-swoop-fast-mods*, *tf-glide-mods*, *tf-dark-dash-mods*) ----
+   (fly-turnv         float)      ;; flapping
+   (fly-speed         float)      ;; flapping, top and target speed
+   (fast-speed        float)      ;; R1 held while flapping, and the dash surface
+   (fly-seek          float)
+   (fly-fric          float)
+   (glide-turnv       float)      ;; Jak 3's glide turns at half the flapping rate (the first prototype had Dark Flight's 1.5x)
+   (glide-speed-cap   float)      ;; the glide surface's cap (above every turbo, so the glide code sets the speed)
+   (glide-target      float)
+   (glide-seek        float)
+   (glide-fric        float)
    (glide-pitch       float)      ;; degrees of forward lean in a glide (Jak 3's Light glide is upright: a small lean sells it on Jak 1's jump pose)
    (pitch-ease        float)      ;; per second: the lean eases toward its target (it was 3 degrees a FRAME: at the
                                   ;; Deck's 90 Hz he tipped in 0.1 s, before his limbs had blended; Corey: "awkward")
@@ -61,11 +74,12 @@
    (cam-glide-height  float)
    (cam-look-up       float)      ;; looks at this point above his feet
    (cam-follow        float)      ;; per second, toward the wanted position
-   (cam-swing         float)      ;; per second, in behind the flight path (above 8 m/s)
+   (cam-swing         float)      ;; per second, in behind the flight path ...
+   (cam-swing-min     float)      ;; ... above this speed
    (cam-blend-in      float)      ;; per second, from the game camera
    (cam-blend-out     float)      ;; per second, back to it
    (cam-radius        float)      ;; the collision probe's sphere
-   ;; ---- the flying pose: Jak's jump animation, driven by his vertical speed (aframes) ----
+   ;; ---- the flying pose: three layers on Jak's own channels (lj-flight-pose) ----
    ;; RAW frames of eichar-jump-ja (a Deck frame scan, 2026-10-17: 0-6 the stiff launch, arms hanging and legs locked,
    ;; which every flap used to land on; 15-24 arms out wide, legs tucking; 27-33 arms up and back)
    (pose-up           float)      ;; climbing fast
@@ -75,9 +89,9 @@
    (flap-to           float)      ;; ... to out wide
    (flap-weight       float)      ;; its strength at full
    (pose-range        float)      ;; vertical speed for the full up/down pose
-   (pose-rate         float)      ;; aframes per second
+   (pose-rate         float)      ;; frames per second the base layer moves
    (pose-kick-rate    float)      ;; ... right after a flap (the base layer, under the flap layer); frames per second
-   (flap-in           time-frame) ;; the flap layer (each press: wind-up crouch -> stretch -> crest) fades in this fast
+   (flap-in           time-frame) ;; the flap layer fades in this fast after a press
    (flap-play         time-frame) ;; ... plays from flap-from to flap-to over this
    (flap-out          time-frame) ;; ... then fades out over this
    ;; the glide: Jak's swim stroke (eichar-swim-walk-ja, raw frames 0-33) held near its widest spread, swaying. The
@@ -85,8 +99,17 @@
    (pose-glide-mid    float)      ;; raw frame the sway centres on
    (pose-glide-amp    float)      ;; frames either side (Corey, 2026-10-17: "i liked his swimming animation during the
                                   ;; glide, it was the wings i didn't like": keep 2.0 at 0.7 Hz, the build he played)
-   (pose-sway-hz      float)      ;; sways per second (x1.6 in a turbo)
+   (pose-sway-hz      float)      ;; sways per second
+   (pose-turbo-sway   float)      ;; ... times this in a turbo
    (pose-blend        time-frame) ;; the glide layer fades in / out over this
+   ;; ---- feedback ----
+   (switch-buzz       int32)      ;; R3 on: rumble strength (0-255) ...
+   (switch-buzz-time  time-frame) ;; ... and length
+   (switch-puffs      int32)      ;; the aura burst on the switch
+   (switch-sparks     int32)
+   (slam-puffs        int32)      ;; ... and on the superhero landing
+   (slam-sparks       int32)
+   (dash-pitch        float)      ;; the dash's whoosh (the jump sound, pitched up)
    ;; ---- the look ----
    (glow              vector :inline) ;; added to Jak's emissive
    (mult              vector :inline) ;; on his colour
@@ -97,7 +120,8 @@
    (wing-shrink       float)      ;; its body bones shrink to this
    (wing-up           float)      ;; anchor: along Jak's up from his chest bone
    (wing-back         float)      ;; ... and behind it
-   (wing-stroke       float)      ;; seconds for one full stroke per X press
+   (wings?            symbol)     ;; wings shown in flight
+   (wing-stroke       time-frame) ;; one full stroke per X press
    (wing-idle-fps     float)      ;; between presses the wings only drift
    (wing-glide-fps    float)      ;; gliding, the wings keep flapping the FLY loop (symmetric; the pelican's own glide
                                   ;; loop banks to one side, Corey: "crooked") at this pace at cruise speed, faster as
@@ -107,7 +131,8 @@
                                   ;; (a short bird beat, not Light Jak's long swoop), so Jak 3's pace (18) flapped
                                   ;; "way too fast" (Corey, 2026-10-17): 7 at cruise (a stroke every 2 s), x2 at most
    (wing-glide-max    float)
-   (wing-blend        time-frame))) ;; crossfade between the wings' fly and glide loops
+   (wing-blend        time-frame) ;; crossfade when a glide starts or ends (the wings change pace and phase)
+   (flap-fresh        time-frame))) ;; a press this recent restarts the wing stroke
 
 (define *lj-tune*
   (new 'static 'lj-tuning
@@ -120,25 +145,28 @@
        :glide-turbo-accel (meters 25) :glide-turbo-max (meters 50) :glide-turbo-sink (meters 1)
        :glide-convert 0.8 :glide-catch (meters 30) :glide-drag 0.25 :glide-gravity 49152.0
        :dash-speed (meters 55) :dash-time (seconds 0.3) :dash-cooldown (seconds 0.6)
-       :glide-launch (seconds 0.6) :glide-pitch 30.0 :pitch-ease 7.0
+       :glide-launch (seconds 0.6) :flap-guard (seconds 0.1) :glide-pitch 30.0 :pitch-ease 7.0
+       :fly-turnv 131072.0 :fly-speed 81920.0 :fast-speed 368640.0 :fly-seek 0.3 :fly-fric 0.2
+       :glide-turnv 65536.0 :glide-speed-cap 409600.0 :glide-target 184320.0 :glide-seek 0.05 :glide-fric 0.05
        :slam-speed (meters 20) :slam-max 245760.0 :slam-boost-max 409600.0 :slam-blast (meters 9)
        :cam-dist (meters 8) :cam-height (meters 3) :cam-glide-dist (meters 10) :cam-glide-height (meters 4)
-       :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-blend-in 3.0 :cam-blend-out 2.0
+       :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-swing-min (meters 8) :cam-blend-in 3.0 :cam-blend-out 2.0
        :cam-radius (meters 0.6)
        :pose-up 15.0 :pose-apex 21.0 :pose-down 30.0 :flap-from 28.0 :flap-to 15.0 :flap-weight 0.85
        :pose-range (meters 12) :pose-rate 20.0 :pose-kick-rate 40.0
        :flap-in (seconds 0.08) :flap-play (seconds 0.4) :flap-out (seconds 0.25)
-       :pose-glide-mid 3.0 :pose-glide-amp 2.0 :pose-sway-hz 0.7 :pose-blend (seconds 0.3)
+       :pose-glide-mid 3.0 :pose-glide-amp 2.0 :pose-sway-hz 0.7 :pose-turbo-sway 1.6 :pose-blend (seconds 0.3)
+       :switch-buzz 200 :switch-buzz-time (seconds 0.3) :switch-puffs 60 :switch-sparks 40
+       :slam-puffs 40 :slam-sparks 30 :dash-pitch 1.5
        :glow (new 'static 'vector :x 0.3 :y 0.42 :z 0.85 :w 0.0)
        :mult (new 'static 'vector :x 0.7 :y 0.82 :z 1.35 :w 1.0)
        :wing-glow (new 'static 'vector :x 0.55 :y 0.6 :z 0.7 :w 0.0)
        :wing-mult (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0)
        :wing-scale 0.55 :wing-shrink 0.15 :wing-up (meters 0.15) :wing-back (meters 0.25)
-       :wing-stroke 0.45 :wing-idle-fps 5.0 :wing-glide-fps 7.0 :wing-glide-min 0.67 :wing-glide-max 2.0 :wing-blend (seconds 0.3)))
+       :wings? #t :wing-stroke (seconds 0.45) :wing-idle-fps 5.0 :wing-glide-fps 7.0 :wing-glide-min 0.67 :wing-glide-max 2.0 :wing-blend (seconds 0.3) :flap-fresh (seconds 0.04)))
 
 (deftype lj-state (structure)
   ((on?           symbol)     ;; Light Jak form on (R3 toggles)
-   (wings-on?     symbol)     ;; wings shown in flight
    (flying?       symbol)     ;; a flight is in progress (set at takeoff, cleared at the landing / state exit)
    (gliding?      symbol)     ;; L1 held in flight
    (holding?      symbol)     ;; X still held through the last flap
@@ -159,16 +187,17 @@
    (cam-blend     float)
    (cam-pos       vector :inline)
    (wing-beat     float)      ;; position in the wings' flap cycle, frames
-   (puppet        handle)     ;; the white Jak process (child of Jak, spawned with him)
+   (puppet        handle)     ;; the light-eco Jak (jak-white-ag) process, a child of Jak spawned with him
    (wings         handle)
    (hidden-proc   process-drawable))) ;; the process whose mesh the draw skips (Jak while the puppet stands in), or #f
 
-(define *lj* (new 'static 'lj-state :on? #t :wings-on? #t :pose-cur 21.0))
+(define *lj* (new 'static 'lj-state :on? #t))
 ;; a zeroed handle or pointer is NOT "none" here (0 is true in GOAL): set the empties at load
 (set! (-> *lj* puppet) (the-as handle #f))
 (set! (-> *lj* wings) (the-as handle #f))
 (set! (-> *lj* hidden-proc) (the-as process-drawable #f))
 (set! (-> *lj* cam-pos w) 1.0)
+(set! (-> *lj* pose-cur) (-> *lj-tune* pose-apex))
 
 (defun lj-reset! ()
   "Everything a flight sets, cleared. At Jak's birth (a new game, a load, a death) and whenever a flight ends."
