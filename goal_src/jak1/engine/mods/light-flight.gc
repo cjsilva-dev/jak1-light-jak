@@ -12,7 +12,7 @@
 ;; Corey wants it to feel like Jak 3's Light Jak, not Dark Flight.
 ;;
 ;; Hooks (all tagged LIGHT JAK): lj-flight-air at the top of the :trans of target-jump, -double-jump, -high-jump and
-;; -falling (target.gc); lj-flight-pose in target-post (logic-target.gc), before the animation is evaluated;
+;; -falling (target.gc); lj-post in target-post (logic-target.gc), before the animation is evaluated;
 ;; lj-state-exit in target-exit (target-handler.gc), the one place every flight state leaves through; the slam in
 ;; target-flop's :trans and :exit and target-flop-hit-ground's :enter (target.gc); the camera in update-camera
 ;; (cam-update.gc); (-> *lj* flying?) in cam-master.gc and target-falling-trans. The level streaming while flying is
@@ -183,7 +183,7 @@
    a flight is never a fall: target-hit-ground measures the drop from last-trans-any-surf (a long one stuns Jak), so it
    starts here. Every flight state exits (here) before the landing state's :enter runs."
   (when (-> *lj* flying?)
-    (fs-vis-land (-> jak control trans)) ;; the checkpoint, and vis back once it is safe (flight-stream.gc rule 6)
+    (fs-land (-> jak control trans)) ;; the other level off unless he's over it, the checkpoint, vis back once safe (flight-stream.gc rule 6)
     (lj-reset!)
     ;; the game's own camera ran on underneath the flight camera, trailing far behind a fast flight; the flight camera
     ;; blends back to it, so put it back behind Jak first (Corey, 2026-11-19: "when you land the camera goes nuts and
@@ -380,6 +380,14 @@
               :group! eichar-swim-walk-ja
               :num! (identity (+ (-> t pose-glide-mid) (* (-> t pose-glide-amp) (sin (degrees ph)))))
               :frame-interp (lj-smooth g))))))
+  (none))
+
+;; ---- Jak's post (target-post, logic-target.gc): every frame he runs, before his animation is evaluated ----
+(defbehavior lj-post target ()
+  "The flying pose, and the streamer's after-landing work (flight-stream.gc rules 6 and 7): it belongs to Jak's frame,
+   so it stops while he is paused."
+  (lj-flight-pose)
+  (fs-after-landing)
   (none))
 
 ;; ---- the flight camera, from update-camera (cam-update.gc) ----

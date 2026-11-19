@@ -20,7 +20,7 @@ True Flight mod for Jak 3, with the same numbers, so it should feel like Jak 3's
 The camera follows Jak in flight, behind and above him, and keeps out of the scenery. The wings are the Sentinel
 Beach pelican's, white, and beat once per flap. A flight is never a fall: landing from one never hurts, however high
 he flew. A flight that ends in mid-air (Light Jak switched off, or a hit that knocks him out of the air) becomes an
-ordinary fall from that point.
+ordinary fall from that point (though the rescue below still catches him for a few seconds).
 
 ## Flying across the world
 
@@ -28,8 +28,10 @@ ordinary fall from that point.
 walking height, so a flight over them never loads the next area. The mod knows which area owns the ground under you
 and along your path, and loads the one you're heading into before you get there: fly from Sandover to the Forbidden
 Jungle, out over the sea to Misty Island or Geyser Rock, up Fire Canyon to the Rock Village and on over the mountains
-to the Volcanic Crater. If you fly off the edge of the world anyway, you're put back above the last ground you flew
-over instead of dying.
+to the Volcanic Crater. When you land, the area you came from stops being drawn, as it would if you had walked away
+from it, and comes back as soon as you head over its ground again. If you fly off the edge of the world, or fall
+through ground that isn't there yet, you're put back above the last solid ground instead of dying. There are no
+invisible walls or height limits.
 
 ## What this mod changes
 
