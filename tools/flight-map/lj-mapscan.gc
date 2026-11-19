@@ -1,0 +1,95 @@
+;; DEV ONLY (Light Jak in Jak 1): scan one active level's real ground into the game log, for the flight streamer's
+;; ground map (engine/mods/flight-map.gc). The Jak 1 port of the skill's mapscan/fs-mapscan.gc (Jak 2/3): same output
+;; lines (MS / MR / MSEND, read by mapgen.py), Jak 1's probe (fill-and-probe-using-line-sphere with a collide-kind),
+;; and the level's bsp bounding sphere for the extent (Jak 1's bsp has no collide-hash).
+;; (ml "goal_src/jak1/lj-mapscan.gc"), stand with the level active, then (lj-mapscan 'level).
+;; Cell = 16 m. Four rays per cell, straight down from 800 m, against THIS level's collision only (the other levels
+;; are set 'loaded for the call: the collide cache only takes 'active levels). A cell's value is the lowest of its hits,
+;; 0 when nothing was hit:  byte = (height + 130 m) / 2 m + 1, clamped to 1..255.
+(define *ms-cell* (meters 16))
+
+(defun ms-floor ((v float))
+  "floor, as an int (Jak 1 has none for floats)"
+  (let ((i (the int v)))
+    (if (< v (the float i)) (+ i -1) i)))
+
+(defun ms-probe ((x float) (z float))
+  "Height of the top surface at x z, or -1e9."
+  (let ((start (new 'stack-no-clear 'vector))
+        (dir (new 'stack-no-clear 'vector))
+        (hit (new 'stack-no-clear 'collide-tri-result)))
+    (set-vector! start x (meters 800) z 1.0)
+    (set-vector! dir 0.0 (meters -1000) 0.0 1.0)
+    (let ((f (fill-and-probe-using-line-sphere *collide-cache* start dir 40.96 (collide-kind background)
+                                               (the-as process #f) hit (new 'static 'pat-surface :noentity #x1))))
+      (if (and (<= 0.0 f) (<= f 1.0)) (+ (-> start y) (* f (-> dir y))) -1000000000.0))))
+
+(defun lj-mapscan ((name symbol))
+  (let ((lev (the-as level #f))
+        (saved (new 'stack-no-clear 'array 'symbol 4)))
+    (dotimes (i 3)
+      (let ((l (-> *level* level i)))
+        (set! (-> saved i) (-> l status))
+        (if (and (= (-> l name) name) (= (-> l status) 'active)) (set! lev l))))
+    (cond
+      ((not lev) (format 0 "MS-FAIL ~A not active~%" name))
+      (else
+       (dotimes (i 3)
+         (let ((l (-> *level* level i)))
+           (if (and (!= l lev) (= (-> l status) 'active)) (set! (-> l status) 'loaded))))
+       ;; the extent: the box around the bounding spheres of the level's drawable trees (real geometry; the bsp
+       ;; header's own sphere is empty in Jak 1)
+       (let ((lo (new 'stack-no-clear 'vector))
+             (hi (new 'stack-no-clear 'vector))
+             (trees (-> lev bsp drawable-trees)))
+         (set-vector! lo 1000000000.0 0.0 1000000000.0 1.0)
+         (set-vector! hi -1000000000.0 0.0 -1000000000.0 1.0)
+         (dotimes (i (-> trees length))
+           (let ((bs (-> trees trees i bsphere)))
+             (format 0 "MSB ~A ~D ~,,0M ~,,0M ~,,0M r ~,,0M~%" name i (-> bs x) (-> bs y) (-> bs z) (-> bs w))
+             (when (and (< 0.0 (-> bs w)) (< (-> bs w) (meters 3000)))
+               (set! (-> lo x) (fmin (-> lo x) (- (-> bs x) (-> bs w))))
+               (set! (-> lo z) (fmin (-> lo z) (- (-> bs z) (-> bs w))))
+               (set! (-> hi x) (fmax (-> hi x) (+ (-> bs x) (-> bs w))))
+               (set! (-> hi z) (fmax (-> hi z) (+ (-> bs z) (-> bs w)))))))
+       (let* ((cell *ms-cell*)
+              (x0 (ms-floor (/ (-> lo x) cell)))
+              (z0 (ms-floor (/ (-> lo z) cell)))
+              (nx (min 300 (+ 2 (the int (/ (- (-> hi x) (-> lo x)) cell)))))
+              (nz (min 300 (+ 2 (the int (/ (- (-> hi z) (-> lo z)) cell)))))
+              (hits 0))
+         (format 0 "MS ~A ~D ~D ~D ~D~%" name x0 z0 nx nz)
+         (dotimes (iz nz)
+           (format 0 "MR ~A ~D" name iz)
+           (dotimes (ix nx)
+             (let ((best 1000000000.0)
+                   (bx (* cell (the float (+ x0 ix))))
+                   (bz (* cell (the float (+ z0 iz)))))
+               (dotimes (s 4)
+                 (let ((h (ms-probe (+ bx (* cell (if (logtest? s 1) 0.75 0.25))) (+ bz (* cell (if (logtest? s 2) 0.75 0.25))))))
+                   (if (and (< -900000000.0 h) (< h best)) (set! best h))))
+               (cond
+                 ((< best 900000000.0)
+                  (set! hits (+ hits 1))
+                  (format 0 " ~D" (max 1 (min 255 (+ 1 (the int (/ (+ best (meters 130)) (meters 2))))))))
+                 (else (format 0 " 0")))))
+           (format 0 "~%"))
+         (format 0 "MSEND ~A ~D~%" name hits)))
+       (dotimes (i 3)
+         (set! (-> *level* level i status) (-> saved i))))))
+  0)
+
+(defun ms-go-c ((cname string))
+  "Teleport to a continue point by name."
+  (let ((c (get-continue-by-name *game-info* cname)))
+    (cond
+      (c (format 0 "MG via ~S~%" cname) (start 'play c))
+      (else (format 0 "MG-FAIL no continue ~S~%" cname))))
+  0)
+
+(defun ms-status ((name symbol))
+  (let ((st 'none))
+    (dotimes (i 3)
+      (if (= (-> *level* level i name) name) (set! st (-> *level* level i status))))
+    (format 0 "MQ ~A ~A~%" name st))
+  0)

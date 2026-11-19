@@ -7,7 +7,7 @@
 ;; One grid of bytes per level: 0 = this level has no ground in the cell, otherwise the lowest
 ;; ground found there as (height + 130 m) / 2 m + 1. flight-stream.gc looks levels up here; a level
 ;; that is not in this file is left to the game's own triggers. To add or refresh an area, scan it
-;; again and regenerate (the jak-modding skill: light-jak/mapscan/lj-mapscan.gc + lj-mapscan.sh, mapscan/mapgen.py jak1).
+;; again and regenerate (tools/flight-map in this repo: lj-mapscan.gc, lj-mapscan.sh, mapgen.py jak1).
 ;;
 ;;   village1   area 0   30 x  27 cells at (-208, -192) m, 386 with ground
 ;;   beach      area 0   32 x  33 cells at (-528, -608) m, 534 with ground

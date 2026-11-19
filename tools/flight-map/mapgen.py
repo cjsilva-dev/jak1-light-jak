@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn an on-device ground scan (mapscan.sh output: MS/MR/MSEND lines) into flight-map.gc.
 
-usage: mapgen.py <jak2|jak3> <scan.txt> <repo goal_src/jakN dir> [--preview out.txt] [--skip a,b]
+usage: mapgen.py <jak1|jak2|jak3> <scan.txt> <repo goal_src/jakN dir> [--preview out.txt] [--skip a,b]
 
 --skip leaves scanned levels out of the map (waspala: the palace level carries a desert backdrop with
 collision, which would claim the desert around Spargus).
@@ -125,13 +125,13 @@ def emit(game, levels, path, grp):
         for r in lv['g']: cells += r
     o = []
     o.append(';;-*-Lisp-*-\n(in-package goal)\n')
-    o.append(f';; name: flight-map.gc ({"Jak II / Dark Flight" if game == "jak2" else "Jak 3 / True Flight"})')
+    o.append(f';; name: flight-map.gc ({ {"jak1": "Jak 1 / Light Jak", "jak2": "Jak II / Dark Flight", "jak3": "Jak 3 / True Flight"}[game] })')
     o.append(';; GENERATED -- do not edit by hand. The real ground of every area the flight streamer manages,')
     o.append(';; scanned in the running game (four rays per 16 m cell, against one level\'s collision at a time).')
     o.append(';; One grid of bytes per level: 0 = this level has no ground in the cell, otherwise the lowest')
     o.append(';; ground found there as (height + 130 m) / 2 m + 1. flight-stream.gc looks levels up here; a level')
     o.append(';; that is not in this file is left to the game\'s own triggers. To add or refresh an area, scan it')
-    o.append(';; again and regenerate (tools/flight-map in this repo: fs-mapscan.gc, mapscan.sh, mapgen.py).')
+    o.append(';; again and regenerate (' + ('tools/flight-map in this repo: lj-mapscan.gc, lj-mapscan.sh, mapgen.py jak1' if game == 'jak1' else 'tools/flight-map in this repo: fs-mapscan.gc, mapscan.sh, mapgen.py') + ').')
     o.append(';;')
     for i, n in enumerate(names):
         lv = levels[n]
@@ -196,7 +196,13 @@ if __name__ == '__main__':
     levels = load(scan)
     if '--skip' in sys.argv:
         for n in sys.argv[sys.argv.index('--skip') + 1].split(','): levels.pop(n, None)
-    grp = groups(f'{src}/engine/level/level-info.gc', list(levels))
-    n = emit(game, levels, f'{src}/engine/target/flight-map.gc', grp)
+    if game == 'jak1':
+        # Jak 1 is one world in one coordinate space, and only its outdoor levels are mapped (the interiors under them
+        # are left to the game): one area
+        grp = [0] * len(levels)
+        n = emit(game, levels, f'{src}/engine/mods/flight-map.gc', grp)
+    else:
+        grp = groups(f'{src}/engine/level/level-info.gc', list(levels))
+        n = emit(game, levels, f'{src}/engine/target/flight-map.gc', grp)
     print(f'{game}: {len(levels)} levels, {n} bytes, areas: ' + '; '.join(' '.join(nm for nm, g in zip(levels, grp) if g == k) for k in sorted(set(grp))))
     if '--preview' in sys.argv: preview(levels, sys.argv[sys.argv.index('--preview') + 1])

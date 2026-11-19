@@ -1,5 +1,5 @@
 name: "Bug report"
-description: Something wrong with Dark Flight? Tell me here.
+description: Something wrong with Light Jak? Tell me here.
 labels: ["bug"]
 body:
   - type: markdown
@@ -10,8 +10,8 @@ body:
     id: version
     attributes:
       label: Mod version
-      description: Shown next to Dark Flight in the OpenGOAL launcher's Mods list.
-      placeholder: "0.2.0"
+      description: Shown next to Light Jak in the OpenGOAL launcher's Mods list.
+      placeholder: "0.1.0"
     validations:
       required: true
   - type: dropdown
@@ -26,13 +26,14 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: wings
+    id: where
     attributes:
-      label: Which wings?
+      label: Was Jak flying?
       options:
-        - Metal Head (default)
-        - Dark Angel
-        - Not related to the wings
+        - Flying or gliding
+        - Landing (superhero landing or normal)
+        - On the ground as Light Jak
+        - Switching Light Jak on or off (R3)
   - type: textarea
     id: what
     attributes:
@@ -63,5 +64,5 @@ body:
       label: Game log (especially for crashes)
       description: |
         Drag the newest log file in here. It's in your OpenGOAL install folder (the one you picked in the launcher):
-        `features/jak2/mods/Dark Flight & True Flight/dark-flight/data/log/`
+        `features/jak1/mods/<the mod source's name>/light-jak/data/log/`
         If the mod failed to install or build, the launcher's own logs help instead: Linux/Steam Deck `~/.local/share/OpenGOAL-Launcher/logs`, Windows `%APPDATA%\OpenGOAL-Launcher\logs`.

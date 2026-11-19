@@ -1,113 +1,59 @@
-# Dark Flight — Jak II
+# Light Jak — Jak and Daxter: The Precursor Legacy
 
-**Dark Jak grows wings and flies.** An [OpenGOAL](https://opengoal.dev) mod for *Jak II* that gives Dark
-Jak full flight — the same as Dark Jak's flight in Jak 3's True Flight mod: hard, driving wing flaps, a
-momentum glide, a turbo, a lightning dash attack, and a superhero landing that sets off a Dark Bomb
-blast — with a choice of two sets of wings.
+**Light Jak, in Jak 1.** An [OpenGOAL](https://opengoal.dev) mod for *Jak and Daxter: The Precursor Legacy* that
+turns Jak into the glowing light-eco Jak from the game's ending and gives him Light Jak's flight from *Jak 3*:
+wing flaps, a momentum glide, a turbo, a dash, and a superhero landing. The flight is the same flight as in the
+True Flight mod for Jak 3, with the same numbers, so it should feel like Jak 3's Light Jak.
 
-## Controls (as Dark Jak)
+## Controls
 
 | Input | Action |
 |---|---|
-| **X** in the air | The first X after a jump is still the double jump; after that, each X unfurls the wings and flaps. Every flap throws him up and forward; **hold X** through a flap for extra lift |
-| **Hold L1** | Glide, leaning into it with his chest hunched forward. Diving turns into forward speed, and the momentum carries |
-| **X while gliding** | Big launch upward (Jak lifts his nose into it) |
-| **Tap R1** | Dash attack: a lunge forward in a storm of lightning and sparks that hits whatever he flies through |
-| **Hold R1** | Turbo — right after a flap, or on top of a glide |
-| **R3** (click the right stick) | Switch wings: Metal Head ⇄ Dark Angel (as Dark Jak, on the ground or in the air) |
-| **Square** in the air | Superhero landing: an accelerating dive (hold Square to dive harder) ending in a Dark Bomb blast. No fall damage from any height. After a moment, X, Square, Circle or the stick gets you up |
+| **R3** (click the right stick) | Light Jak on or off, in a burst of light. Standing, he raises his arm the way he does at an eco vent |
+| **X** in the air | The first X after a jump is still the double jump; after that, each X flaps the wings. **Hold X** through a flap for extra lift |
+| **L1** in the air | Take off into a glide (press it; holding L1 is still the crouch on the ground). Hold it to keep gliding |
+| **X while gliding** | Big launch upward |
+| **Hold R1** | Fly fast while flapping; turbo while gliding |
+| **Tap R1** | Dash |
+| **Square** in the air | Superhero landing: a plunge (hold Square to dive harder) ending in a red-eco strike. No fall damage from any height |
 
-The camera follows Jak's height while flying. Dark Jak doesn't time out, so you can fly for as long as
-you like. Shot while flying, he flinches in the air and flies on, and there's no fall damage after
-flying, from any height.
+The camera follows Jak in flight, behind and above him, and keeps out of the scenery. The wings are the Sentinel
+Beach pelican's, white, and beat once per flap. A flight is never a fall: he always lands softly.
 
-### In Haven City
+## Flying across the world
 
-Haven only keeps a couple of districts loaded at once, so flight there is tuned to it: the city has a
-200 m ceiling (the whole skyline is yours) and the turbo is capped.
-
-The mod knows which district owns the ground under you and along your path, so the one you're heading
-into is loaded before you get there, even when you fly over the walls between them at full speed.
-Loading itself is faster too, and districts are drawn as soon as they arrive. If you
-glide off the edge of the world anyway, you're put back where you left solid ground instead of dying.
-
-## Settings
-
-Both are in the *Secrets* menu, and each save keeps its own choice:
-
-- **Dark Angel Wings** (also switched with **R3** as Dark Jak) — off: **Metal Head** wings (Metal Kor's, with his wing-beat and hover sounds;
-  the default). On: **Dark Angel** wings (the bat wings of the pegasus that flies through Haven Forest,
-  with its sounds). Free, and always in the menu. Both styles crackle with Dark Jak's lightning, as his
-  wings do in True Flight.
-- **Unlimited Dark Jak** — the game's own item (endless dark eco). The mod unlocks it and switches it **on**
-  in any save that doesn't have it yet. Switch it off there if you'd rather play with the original
-  game's costs: a full meter to transform and 20 seconds of Dark Jak, except that **flying is free**.
-  His timer pauses while the wings are out and picks up where it left off when he lands, so
-  everything else you do as Dark Jak costs what it always did, and a flight never costs anything.
-  (One small thing: dark eco picked up while the wings are out doesn't add to the paused timer.)
-
-### What the mod writes into your save
-
-Secrets are saved with your game, so these stay in the save file (the original game ignores them if
-you load the save without the mod). They are written in the one place the game itself decides what
-Jak has, whenever it rebuilds Jak's abilities (a new game, a loaded save, a respawn, a level change);
-nothing is written while you play:
-
-- **Unlimited Dark Jak** is marked bought and switched on the first time a save runs with the mod.
-  Switch it off in the Secrets menu if you prefer; the mod won't switch it back on.
-- **Dark Angel Wings** is marked bought (it's free) so it always shows in the menu.
-
-## Options for testing
-
-At the top of `goal_src/jak2/engine/target/target-darkjak.gc` (off by default):
-
-- `*df-opt-all-dark-powers?*` — Dark Jak and all his powers from any save, plus every city security pass
-  (so the force fields between districts open for a flying Jak)
-- `*df-opt-unlock-extras?*` — every Secrets-menu item and OpenGOAL PC cheat unlocked
-
-Both are applied with the rest of the mod's save defaults (`df-game-defaults`), whenever the game rebuilds
-Jak's abilities (a new game, a loaded save, a respawn, a level change).
+*Jak 1* loads its areas when you walk across invisible lines between them, and most of those lines only work at
+walking height, so a flight over them never loads the next area. The mod knows which area owns the ground under you
+and along your path, and loads the one you're heading into before you get there: fly from Sandover to the Forbidden
+Jungle, out over the sea to Misty Island or Geyser Rock, up Fire Canyon to the Rock Village and on over the mountains
+to the Volcanic Crater. If you fly off the edge of the world anyway, you're put back above the last ground you flew
+over instead of dying.
 
 ## What this mod changes
 
-- `goal_src/jak2/engine/target/target-darkjak.gc` — the flight, glide, turbo, landing, wings and sounds
-- `goal_src/jak2/engine/target/{target,logic-target,target-h}.gc` — hooks the flight into Jak's air states
-- `goal_src/jak2/engine/game/task/task-control.gc` — calls the mod's save defaults where the game rebuilds what Jak has
-- `goal_src/jak2/engine/camera/cam-master.gc` — the camera tracks Jak's height while flying
-- `goal_src/jak2/engine/level/region.gc` — while flying in the city, district triggers are tested a little ahead of Jak (at most 30 m)
-- `goal_src/jak2/engine/target/flight-core.gc` — the flight both mods share: Dark Jak's flap, glide, turbo, dash and
-  posture, and the tuning both games agree on (the same file is in True Flight)
-- `goal_src/jak2/engine/target/flight-stream.gc`, `flight-stream-h.gc`, `flight-map.gc` — level streaming while flying: a map of
-  which level owns the ground (generated by `tools/flight-map/`), the loader that follows it, and the fall-out-of-the-world rescue
-- `goal_src/jak2/engine/level/level.gc`, `level-h.gc`, `engine/load/load-state.gc`, `engine/game/main.gc`, `engine/camera/cam-update.gc` —
-  faster level loading, levels drawn as soon as they arrive from the air, and a level that can't load is skipped instead of stopping the game
-- `game/graphics/…/loader/*`, `game/graphics/pipelines/opengl.cpp` — **engine change:** the renderer uploads a new level's
-  graphics faster and keeps more of them cached
-- `goal_src/jak2/engine/level/level.gc`, `goal_src/jak2/dgos/game.gd`,
-  `custom_assets/jak2/levels/test-zone/test-zone.jsonc` — keep both wing models loaded everywhere
-- `goal_src/jak2/engine/ui/progress/…`, `goal_src/jak2/engine/game/game-info-h.gc`,
-  `goal_src/jak2/engine/ui/text-id-h.gc`, `game/assets/jak2/text/` — the Dark Angel Wings secret
-- `game/overlord/common/sbank.cpp` — **engine change:** one extra sound bank slot. Stock *Jak II* can hold
-  six sound banks and uses all of them, so there's no room for the wings' sounds; this adds a seventh.
-- `decompiler/level_extractor/extract_merc.cpp` — **build-tool change:** Metal Kor's wings are drawn like
-  water (in his boss arena that works), which let the ocean show through them at the Port; they now
-  keep their depth when built into the custom level.
+- `goal_src/jak1/engine/mods/light-jak-h.gc` — the tuning (one table, Jak 3's Light Jak values) and the mod's state
+- `goal_src/jak1/engine/mods/light-jak.gc` — Light Jak himself: the ending's light-eco Jak drawn in place of Jak,
+  following his every move; his white eyes, the glow, the switch
+- `goal_src/jak1/engine/mods/light-flight.gc` — the flight, glide, turbo, dash, superhero landing, flying poses and camera
+- `goal_src/jak1/engine/mods/light-wings.gc` — the wings
+- `goal_src/jak1/engine/mods/flight-stream.gc`, `flight-map.gc` — loading areas while flying: a map of which area owns
+  the ground (generated by `tools/flight-map/`), the loader that follows it, and the fall-out-of-the-world rescue
+- `goal_src/jak1/engine/target/{target,target-handler,logic-target}.gc` — hooks the flight into Jak's air states
+- `goal_src/jak1/engine/camera/{cam-master,cam-update}.gc`, `engine/draw/drawable.gc`, `pc/util/pc-anim-util.gc` —
+  the flight camera, and Light Jak drawn in Jak's place
+- `goal_src/jak1/engine/level/load-boundary.gc`, `engine/collide/collide-shape.gc` — the loader and the rescue hooked
+  into the game's own area loading and fall checks
+- `goal_src/jak1/dgos/game.gd`, `game.gp`, `decompiler/config/jak1/jak1_config.jsonc` — the light-eco Jak and the
+  pelican made available everywhere, the feathers whitened from your own copy of the game
+- `decompiler/` — **extraction change:** the whitening of the feathers (`common_whiten_textures`)
 
-## Building
-
-The wing models are added to the custom `test-zone` level, which makes the build decompile that
-level's art groups as well — a first build takes a little longer than the plain mod base.
-
-## Not included
-
-This mod contains only code. Everything it shows or plays — Dark Jak, both sets of wings and their
-sounds, the Dark Bomb effects — comes from your own copy of *Jak II*. HD texture packs are not part of
-it; install your favourite pack through the OpenGOAL launcher as usual.
+Every change to the game's own files is marked with a `LIGHT JAK` comment.
 
 ## Credits
 
-- Built on the [OG-Mod-Base](https://github.com/OpenGOAL-Mods/OG-Mod-Base) template and the
-  [OpenGOAL](https://github.com/open-goal/jak-project) project.
-- *Jak II* © Naughty Dog / Sony Interactive Entertainment. This is a fan project.
+Built on [OpenGOAL](https://github.com/open-goal/jak-project) and the
+[OpenGOAL mod base](https://github.com/OpenGOAL-Mods/OG-Mod-Base). Light Jak is the work of cjsilva-dev; the flight is
+shared with the [True Flight](https://github.com/cjsilva-dev/jak3-true-flight) (Jak 3) and
+[Dark Flight](https://github.com/cjsilva-dev/jak2-dark-flight) (Jak II) mods.
 
-The mod base's own readme (with OpenGOAL setup links) is kept in [README.opengoal.md](README.opengoal.md).
+You need your own copy of the game: the mod contains no game data.
