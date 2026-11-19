@@ -132,6 +132,7 @@
 
   // art groups that should always be possible to access, e.g. "common_art_groups": ["eichar-racer+0-ag", "racer-ag", "ef-plane-ag"]
   "common_art_groups": ["jak-white-ag", "pelican-ag"], // LIGHT JAK: the ending's light-eco Jak and the pelican's wings, drawn anywhere (goal_src/jak1/engine/mods/light-jak.gc, light-wings.gc)
+  "common_whiten_textures": ["peli-wing", "peli-feathers"], // LIGHT JAK: the pelican's feathers, white in the common level only (Light Jak's wings)
 
   // tpages that should always be possible to access, e.g. "common_tpages": [1119],
   "common_tpages": [],

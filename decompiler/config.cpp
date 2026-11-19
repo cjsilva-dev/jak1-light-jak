@@ -346,6 +346,12 @@ Config make_config_via_json(nlohmann::json& json) {
     config.common_art_groups = json.at("common_art_groups").get<std::unordered_set<std::string>>();
   }
 
+  // LIGHT JAK
+  if (json.contains("common_whiten_textures")) {
+    config.common_whiten_textures =
+        json.at("common_whiten_textures").get<std::vector<std::string>>();
+  }
+
   if (inputs_json.contains("common_tpages")) {
     config.common_tpages = inputs_json.at("common_tpages").get<std::unordered_set<int>>();
   }

@@ -172,6 +172,9 @@ struct Config {
 
   std::unordered_set<std::string> animated_textures;
   std::unordered_set<std::string> common_art_groups;
+  // LIGHT JAK: textures of the common art groups whose names start with one of these are whitened in the common
+  // level (GAME.fr3) only, from the player's own extracted pixels (the pelican's feathers for Light Jak's wings)
+  std::vector<std::string> common_whiten_textures;
   std::unordered_set<int> common_tpages;
 
   std::vector<std::string> levels_to_extract;

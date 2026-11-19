@@ -11,9 +11,9 @@
 ;; own ja-post: from Jak's postbind (lj-form-postbind) lj-wings-place evaluates its animation and joint math with the
 ;; bird at the origin, then re-bases every bone onto Jak's chest. One full stroke of its fly loop per X press, a slow
 ;; drift between presses, and in a glide the same fly loop at a glide pace that follows the glide speed (the pelican's
-;; own glide loop banks to one side). (The Flut Flut's wings were tried first: "not angelic", and blue.) White:
-;; fr3-whiten.py (jak-modding skill) whitens the feathers in the built GAME.fr3; texture replacements do not reach a
-;; common_art_groups model yet.
+;; own glide loop banks to one side). (The Flut Flut's wings were tried first: "not angelic", and blue.) White: the
+;; decompiler whitens the feathers in the common level from the player's own pixels (jak1_config.jsonc
+;; common_whiten_textures, extract_level.cpp); the real pelican on Sentinel Beach keeps its colours.
 
 (defskelgroup *lj-wings-sg*
   pelican
