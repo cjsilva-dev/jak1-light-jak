@@ -351,6 +351,8 @@
   "mod-settings.o" ;; added mod-base-change
   "mod-common-functions.o" ;; added
   "orb-placer.o" ;; added
+  "flight-map.o" ;; LIGHT JAK: the ground map (generated)
+  "flight-stream.o" ;; LIGHT JAK: level streaming while flying
   "light-jak.o" ;; LIGHT JAK
   "light-flight.o" ;; LIGHT JAK
   "light-wings.o" ;; LIGHT JAK

@@ -668,7 +668,9 @@
     (if (and (time-elapsed? (-> self control last-time-on-surface) (seconds 2))
              (and v1-146
                   (< (-> self control trans y) (-> v1-146 info bottom-height))
-                  (not (and (= *cheat-mode* 'debug) (cpad-hold? (-> self control cpad number) r2)))))
+                  (not (and (= *cheat-mode* 'debug) (cpad-hold? (-> self control cpad number) r2)))
+                  ;; LIGHT JAK: after a flight, ground below or a rescue spot beats the death line (flight-stream.gc)
+                  (not (and *fs-endlessfall-hook* (*fs-endlessfall-hook* 'line)))))
       (send-event self 'attack-invinc #f (static-attack-info ((mode 'endlessfall))))))
   0
   (none))

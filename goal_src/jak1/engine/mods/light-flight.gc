@@ -15,7 +15,8 @@
 ;; -falling (target.gc); lj-flight-pose in target-post (logic-target.gc), before the animation is evaluated;
 ;; lj-state-exit in target-exit (target-handler.gc), the one place every flight state leaves through; the slam in
 ;; target-flop's :trans and :exit and target-flop-hit-ground's :enter (target.gc); the camera in update-camera
-;; (cam-update.gc); (-> *lj* flying?) in cam-master.gc and target-falling-trans.
+;; (cam-update.gc); (-> *lj* flying?) in cam-master.gc and target-falling-trans. The level streaming while flying is
+;; flight-stream.gc (fs-tick, from the flight and the slam).
 
 ;; ---- movement surfaces: copies of Jak 1's jump surface with Light Jak's handling (values in *lj-tune*) ----
 (defun lj-make-surface ((src surface) (name symbol) (turnv float) (speed float) (target float) (seek float) (fric float))
@@ -179,6 +180,7 @@
    a flight is never a fall: target-hit-ground measures the drop from last-trans-any-surf (a long one stuns Jak), so it
    starts here. Every flight state exits (here) before the landing state's :enter runs."
   (when (-> *lj* flying?)
+    (fs-vis-land (-> jak control trans)) ;; vis again, for the level he lands in (flight-stream.gc rule 6)
     (lj-reset!)
     (set! (-> jak control last-trans-any-surf quad) (-> jak control trans quad))
     (set! (-> jak control dynam gravity-length) (-> jak control standard-dynamics gravity-length))
@@ -245,6 +247,7 @@
     ;; jump took off at once (review, 2026-10-17)
     (if (cpad-pressed? (-> self control cpad number) l1) (lj-takeoff!))
     (when (-> *lj* flying?)
+      (fs-tick) ;; the flight streamer (flight-stream.gc): the levels under and ahead of Jak, the abyss net
       ;; R1 held while flapping = the fast surface, as Light Jak's swoop (the glide sets its own surface)
       (set! (-> self control mod-surface)
             (if (cpad-hold? (-> self control cpad number) r1) *lj-fly-fast-mods* *lj-fly-mods*))
@@ -273,6 +276,7 @@
    itself starts with a hop), terminal slam-max, more while Square stays held. (target-flop's own fall-timeout, which
    would drop a long dive into a plain fall, is held off by (-> *lj* slam?) in target.gc.)"
   (when (-> *lj* slam?)
+    (fs-tick) ;; a plunge from altitude still needs the level below loaded
     (when (not (-> *lj* slam-started?))
       (set! (-> *lj* slam-started?) #t)
       (set! (-> self control transv y) (fmin (-> self control transv y) (- (-> *lj-tune* slam-speed)))))

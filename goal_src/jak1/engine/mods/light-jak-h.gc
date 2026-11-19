@@ -199,6 +199,13 @@
 (set! (-> *lj* cam-pos w) 1.0)
 (set! (-> *lj* pose-cur) (-> *lj-tune* pose-apex))
 
+;; ---- the flight streamer's hooks into the engine (flight-stream.gc sets them; the engine files compile after this) ----
+(define *fs-want-levels-hook* (the-as (function none) #f))    ;; called at the end of want-levels (load-boundary.gc)
+(define *fs-endlessfall-hook* (the-as (function symbol symbol) #f)) ;; asked before an endless-fall death: 'line
+                                                                    ;; (logic-target.gc) or 'surface (collide-shape.gc)
+(define *fs-vis-hold?* #f)    ;; while flying: no vis (want-vis in load-boundary.gc is held; flight-stream.gc rule 6)
+(define *fs-vis-pending?* #f) ;; landed: everything still drawn until the game's own lines pick a vis level again
+
 (defun lj-reset! ()
   "Everything a flight sets, cleared. At Jak's birth (a new game, a load, a death) and whenever a flight ends."
   (set! (-> *lj* flying?) #f)
@@ -212,5 +219,9 @@
   (set! (-> *lj* glide-speed) 0.0)
   (set! (-> *lj* body-pitch) 0.0)
   (set! (-> *lj* pose-mixing?) #f)
+  (when (or *fs-vis-hold?* *fs-vis-pending?*) ;; a flight cut off without a landing (a load, a spawn): vis back on
+    (set! *artist-all-visible* #f)
+    (set! *fs-vis-hold?* #f)
+    (set! *fs-vis-pending?* #f))
   (set! (-> *lj* pose-glide-w) 0.0)
   (none))

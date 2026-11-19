@@ -690,7 +690,9 @@
        (send-event (-> obj process) 'attack-invinc #f (static-attack-info ((mode 'melt)))))
       (((pat-event endlessfall))
        ;; endless pit death plane.
-       (send-event (-> obj process) 'attack-invinc #f (static-attack-info ((mode 'endlessfall)))))))
+       ;; LIGHT JAK: after a flight, a rescue spot beats the death plane (engine/mods/flight-stream.gc rule 7)
+       (if (not (and (= (-> obj process) *target*) *fs-endlessfall-hook* (*fs-endlessfall-hook* 'surface)))
+         (send-event (-> obj process) 'attack-invinc #f (static-attack-info ((mode 'endlessfall))))))))
   0
   (none))
 

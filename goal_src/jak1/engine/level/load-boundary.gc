@@ -1101,6 +1101,8 @@
         (set! (-> this want v1-10 force-vis?) #f)
         (set! (-> this want v1-10 force-inside?) #f)
         (set! v1-10 2))))
+  ;; LIGHT JAK: the flight streamer re-decides after every change of the wanted levels (engine/mods/flight-stream.gc)
+  (if *fs-want-levels-hook* (*fs-want-levels-hook*))
   0)
 
 (defmethod want-display-level ((this load-state) (arg0 symbol) (arg1 symbol))
@@ -1112,7 +1114,13 @@
   0)
 
 (defmethod want-vis ((this load-state) (arg0 symbol))
-  (set! (-> this vis-nick) arg0)
+  ;; LIGHT JAK: no vis while flying, and after the landing vis comes back with the first vis line the game crosses
+  ;; (engine/mods/flight-stream.gc rule 6)
+  (when (not *fs-vis-hold?*)
+    (set! (-> this vis-nick) arg0)
+    (when (and arg0 *fs-vis-pending?*)
+      (set! *fs-vis-pending?* #f)
+      (set! *artist-all-visible* #f)))
   0)
 
 (defmethod want-force-vis ((this load-state) (arg0 symbol) (arg1 symbol))
