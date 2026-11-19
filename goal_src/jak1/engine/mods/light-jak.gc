@@ -206,6 +206,10 @@
       (when (-> *lj* powerup?)
         (set! (-> *lj* powerup?) #f)
         (if *target* (send-event *target* 'powerup (pickup-type eco-blue) (-> *FACT-bank* eco-full-inc))))
+      ;; a flight ended: the game's camera back behind Jak (its 'teleport resets its tracking and its string)
+      (when (-> *lj* cam-reset?)
+        (set! (-> *lj* cam-reset?) #f)
+        (send-event *camera* 'teleport))
       (let ((want (if (and (-> self mapped?) (lj-form-active?)) #t #f)))
         (if (!= want (-> self shown?)) (lj-puppet-show! want))
         ;; the aura is an emitter: it is fed every frame it shows, like any Jak 1 particle emitter

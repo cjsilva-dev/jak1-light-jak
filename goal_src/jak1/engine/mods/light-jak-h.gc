@@ -175,6 +175,7 @@
    (slam?         symbol)     ;; a superhero landing is in progress
    (slam-started? symbol)
    (powerup?      symbol)     ;; the R3 switch asked for the eco powerup pose (sent from the puppet's process)
+   (cam-reset?    symbol)     ;; a flight ended: put the game's camera back behind Jak (sent from the puppet's process)
    (flap-time     time-frame) ;; last flap press
    (dash-start    time-frame)
    (hold-given    float)

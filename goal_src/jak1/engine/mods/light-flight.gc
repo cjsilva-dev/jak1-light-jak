@@ -182,6 +182,10 @@
   (when (-> *lj* flying?)
     (fs-vis-land (-> jak control trans)) ;; vis again, for the level he lands in (flight-stream.gc rule 6)
     (lj-reset!)
+    ;; the game's own camera ran on underneath the flight camera, trailing far behind a fast flight; the flight camera
+    ;; blends back to it, so put it back behind Jak first (Corey, 2026-11-19: "when you land the camera goes nuts and
+    ;; zooms out")
+    (set! (-> *lj* cam-reset?) #t)
     (set! (-> jak control last-trans-any-surf quad) (-> jak control trans quad))
     (set! (-> jak control dynam gravity-length) (-> jak control standard-dynamics gravity-length))
     (set! (-> jak control dynam gravity-max) (-> jak control standard-dynamics gravity-max)))
