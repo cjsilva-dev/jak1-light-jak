@@ -16,7 +16,8 @@
 ;; The puppet (and the wings) are children of Jak, spawned with him in init-target (logic-target.gc): they die with
 ;; him and come back with him, and their bone maps are built then, once. Per frame: the bone copy (it follows the
 ;; animation), the show/hide check in the puppet's :trans (a transition on change), the aura emitter (Jak 1 emitters
-;; are fed every frame) and the R3 poll (lj-form-input, runs-every-frame).
+;; are fed every frame) and the R3 poll (lj-form-input, runs-every-frame). Compiled after light-wings.gc and before
+;; light-flight.gc.
 
 (defskelgroup *lj-puppet-sg*
   jak-white
@@ -26,8 +27,7 @@
   :bounds (static-spherem 0 0 0 4))
 
 (defconstant LJ_MAX_NODES 96)
-;; the aura's particle ids (parts 3500 3502, group 1000 below; the game's own top out at 2968 / 708)
-(defconstant LJ_PART_PUFF 3500)
+(defconstant LJ_PART_PUFF 3500) ;; the aura's particle ids (the defparts and the group below)
 (defconstant LJ_PART_SPARK 3502)
 (defconstant LJ_PART_GROUP 1000)
 
@@ -40,7 +40,7 @@
    lj-puppet-idle))
 
 ;; ---- the glow: the ending's own white-eco aura (sage-finalboss-part.gc parts 2930 / 2929, common "effects"
-;; textures), tinted Light-Jak blue-white, on new ids (parts 3500+, group 1000; the game's top out at 2968 / 708).
+;; textures), tinted Light-Jak blue-white, on new ids (parts 3500-3502, group 1000; the game's top out at 2968 / 708).
 ;; The ending's sparkle "pop" function is tied to the boss arena's height, so the sparkles here just rise and fade.
 (defpartgroup group-lj-aura
   :id 1000
@@ -116,26 +116,12 @@
     (countdown (k (+ (-> self node-count) -1))
       (let* ((i (+ k 1))
              (jt (-> ours data i joint))
-             (found -1))
-        (when jt
-          (dotimes (j (-> his length))
-            (let ((hj (-> his data j joint)))
-              (if (and (< found 0) hj (string= (-> hj name) (-> jt name))) (set! found j)))))
+             (found (if jt (lj-joint-index his (-> jt name)) -1)))
         (if (< found 0) (+! missing 1))
         (set! (-> self bone-map i) found)))
     (if (> missing 0) (format 0 "light-jak: ~D of ~D puppet bones have no match on Jak~%" missing (-> self node-count))))
   (set! (-> self mapped?) #t)
   (none))
-
-(defun lj-form-active? ()
-  "Should the puppet stand in for Jak right now? Not with the form off, nor whenever the game hides Jak itself
-   (cutscenes use their own Jak), nor during a death/warp dissolve: that counts down inside Jak's own draw and ends
-   with 'death-end, so Jak must draw for it or a warp gate waits forever (2026-10-15)."
-  (and (-> *lj* on?)
-       *target*
-       (nonzero? (-> *target* draw))
-       (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))
-       (zero? (-> *target* draw death-timer))))
 
 (defun lj-eyes ((pup lj-puppet) (jak target))
   "Jak 1 draws eyes into a texture per eye slot (update-eyes, eye.gc), only for a slot whose process has the eye bit
@@ -160,8 +146,6 @@
         (set! (-> dst shaders) (the-as (inline-array adgif-shader) (-> our-ctrl iris-shader))))))
   (none))
 
-(define-extern lj-wings-place (function target none)) ;; light-wings.gc
-
 (defun lj-form-postbind ((jak target))
   "From Jak's postbind (target-joint-callback-pc): after his joint math, before the draw. Copy his pose onto the puppet
    and place the wings. This is the one per-frame job of the form, and it has to be: it follows the animation."
@@ -178,24 +162,15 @@
       ;; the renderer culls on origin + bounds
       (set! (-> pup root trans quad) (-> jak root trans quad))
       (set! (-> pup draw origin quad) (-> jak draw origin quad))
-      (set! (-> pup draw light-index) (-> jak draw light-index))
-      (vector*! (-> pup draw color-mult) (-> jak draw color-mult) (-> *lj-tune* mult))
-      (set! (-> pup draw color-mult w) (-> jak draw color-mult w))
-      (vector+! (-> pup draw color-emissive) (-> jak draw color-emissive) (-> *lj-tune* glow))
-      (set! (-> pup draw color-emissive w) 0.0)))
+      (lj-draw-like! pup jak (-> *lj-tune* mult) (-> *lj-tune* glow))))
   (lj-wings-place jak)
   (none))
 
 (defbehavior lj-puppet-show! lj-puppet ((on? symbol))
   "The show/hide transition: the puppet's draw bits and which mesh the draw skips."
   (set! (-> self shown?) on?)
-  (cond
-    (on?
-     (logclear! (-> self draw status) (draw-status hidden no-anim no-skeleton-update))
-     (set! (-> *lj* hidden-proc) *target*))
-    (else
-     (logior! (-> self draw status) (draw-status hidden))
-     (set! (-> *lj* hidden-proc) (the-as process-drawable #f))))
+  (lj-draw-show! self on?)
+  (set! (-> *lj* hidden-proc) (if on? *target* (the-as process-drawable #f)))
   (none))
 
 (defstate lj-puppet-idle (lj-puppet)
@@ -206,10 +181,12 @@
       (when (-> *lj* powerup?)
         (set! (-> *lj* powerup?) #f)
         (if *target* (send-event *target* 'powerup (pickup-type eco-blue) (-> *FACT-bank* eco-full-inc))))
-      ;; a flight ended: the game's camera back behind Jak (its 'teleport resets its tracking and its string)
+      ;; a flight ended on screen: the game's camera back behind Jak (its 'teleport resets its tracking and its string);
+      ;; not into a death or a cutscene, which run cameras of their own
       (when (-> *lj* cam-reset?)
         (set! (-> *lj* cam-reset?) #f)
-        (send-event *camera* 'teleport))
+        (if (and *target* (not (logtest? (-> *target* state-flags) (state-flags dying grabbed))))
+          (send-event *camera* 'teleport)))
       (let ((want (if (and (-> self mapped?) (lj-form-active?)) #t #f)))
         (if (!= want (-> self shown?)) (lj-puppet-show! want))
         ;; the aura is an emitter: it is fed every frame it shows, like any Jak 1 particle emitter
@@ -243,18 +220,18 @@
   (go lj-puppet-idle)
   (none))
 
-(define-extern lj-wings-spawn (function target none)) ;; light-wings.gc
 (define-extern lj-land! (function target none)) ;; light-flight.gc
 
 (defun lj-form-spawn ((jak target))
   "At Jak's birth (init-target, after his skeleton): the puppet and the wings, as his children. A flight that was
-   cut off by his death or a load is over too."
+   cut off by his death or a load is over too, and so are the requests the old puppet had not sent."
   (lj-reset!)
+  (fs-reset!)
+  (set! (-> *lj* powerup?) #f)
+  (set! (-> *lj* cam-reset?) #f)
   (set! (-> *lj* hidden-proc) (the-as process-drawable #f))
-  (let ((p (process-spawn lj-puppet jak :to jak)))
-    (set! (-> *lj* puppet) (if p (ppointer->handle p) (the-as handle #f)))
-    (if (not p) (format 0 "light-jak: no memory for the puppet~%")))
-  (lj-wings-spawn jak)
+  (set! (-> *lj* puppet) (lj-spawn-child lj-puppet jak "puppet"))
+  (set! (-> *lj* wings) (lj-spawn-child lj-wings jak "wings"))
   (none))
 
 (defun lj-form-switch! ((on? symbol))
@@ -273,6 +250,12 @@
   (none))
 
 (defun lj-form-input ()
-  "Every frame (runs-every-frame): the R3 toggle. Input is the one thing that has to be polled."
-  (if (cpad-pressed? (if *target* (-> *target* control cpad number) 0) r3) (lj-form-switch! (not (-> *lj* on?))))
+  "Every frame (runs-every-frame): the R3 toggle. Input is the one thing that has to be polled. runs-every-frame runs
+   in every master mode, so only in play: not paused, not while the game hides Jak, holds him for a cutscene or a
+   talk, or kills him."
+  (if (and (cpad-pressed? (if *target* (-> *target* control cpad number) 0) r3)
+           (not (paused?))
+           (lj-jak-shown?)
+           (not (logtest? (-> *target* state-flags) (state-flags dying grabbed))))
+    (lj-form-switch! (not (-> *lj* on?))))
   (none))

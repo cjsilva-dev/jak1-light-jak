@@ -1851,6 +1851,7 @@
  "game/projectiles-h.gc"
  "target/target-h.gc"
  "mods/light-jak-h.gc" ;; LIGHT JAK: types, tuning, state (the engine files below read them)
+ "mods/flight-stream-h.gc" ;; LIGHT JAK: the flight streamer's hooks (the engine files below call them)
  "gfx/depth-cue-h.gc"
  "debug/stats-h.gc"
  "level/bsp-h.gc"
@@ -2138,9 +2139,9 @@
  "mods/mod-common-functions.gc"
  "mods/flight-map.gc" ;; LIGHT JAK: the ground map (generated)
  "mods/flight-stream.gc" ;; LIGHT JAK: level streaming while flying
+ "mods/light-wings.gc" ;; LIGHT JAK
  "mods/light-jak.gc" ;; LIGHT JAK
  "mods/light-flight.gc" ;; LIGHT JAK
- "mods/light-wings.gc" ;; LIGHT JAK
  "mods/mod-custom-code.gc"
  "mods/mod-debug.gc"
 )

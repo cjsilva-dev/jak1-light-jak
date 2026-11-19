@@ -118,6 +118,7 @@
   "projectiles-h.o"
   "target-h.o"
   "light-jak-h.o" ;; LIGHT JAK: types, tuning, state
+  "flight-stream-h.o" ;; LIGHT JAK: the flight streamer's hooks
   "depth-cue-h.o"
   "stats-h.o"
   "bsp-h.o"
@@ -353,9 +354,9 @@
   "orb-placer.o" ;; added
   "flight-map.o" ;; LIGHT JAK: the ground map (generated)
   "flight-stream.o" ;; LIGHT JAK: level streaming while flying
+  "light-wings.o" ;; LIGHT JAK
   "light-jak.o" ;; LIGHT JAK
   "light-flight.o" ;; LIGHT JAK
-  "light-wings.o" ;; LIGHT JAK
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
   ;; keep zoomer stuff loaded

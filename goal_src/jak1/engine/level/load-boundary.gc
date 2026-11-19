@@ -1114,13 +1114,7 @@
   0)
 
 (defmethod want-vis ((this load-state) (arg0 symbol))
-  ;; LIGHT JAK: no vis while flying, and after the landing vis comes back with the first vis line the game crosses
-  ;; (engine/mods/flight-stream.gc rule 6)
-  (when (not *fs-vis-hold?*)
-    (set! (-> this vis-nick) arg0)
-    (when (and arg0 *fs-vis-pending?*)
-      (set! *fs-vis-pending?* #f)
-      (set! *artist-all-visible* #f)))
+  (if (not *fs-vis-hold?*) (set! (-> this vis-nick) arg0)) ;; LIGHT JAK: no vis while flying (engine/mods/flight-stream.gc rule 6)
   0)
 
 (defmethod want-force-vis ((this load-state) (arg0 symbol) (arg1 symbol))

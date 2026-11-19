@@ -8,7 +8,9 @@
 ;; LIGHT JAK IN JAK 1, the flight streamer: the Jak 1 fork of Dark Flight / True Flight's map-based streamer
 ;; (jak2/jak3 engine/target/flight-stream.gc). Same design and the same fs- names; what Jak 1 doesn't have is gone
 ;; (borrow, alias and master levels, the C++ fr3 pre-warm and DGO drain, the flight wall) and what it does differently
-;; is here (two level slots, want-levels with two names, want-vis by nickname, its collision probe).
+;; is here (two level slots, want-levels with two names, want-vis by nickname, its collision probe). The Jak 1 facts and
+;; the engine hooks are in flight-stream-h.gc, as in Jak 2/3; this file is not shared byte for byte, but its knobs keep
+;; the Jak 2/3 values where the rule is the same (fs-lint.py checks them).
 ;;
 ;; Jak 1 loads levels when Jak's (or the camera's) path crosses a load boundary (load-boundary-data.gc): 2D lines with
 ;; a top and a bottom plane. A crossing only counts between the planes, and many tops are under 60 m, so a flight over
@@ -32,22 +34,21 @@
 ;;     four times, at Rock Village with Fire Canyon still loaded (2026-11-19), once even after the landing when the
 ;;     mod set the nickname itself. So from takeoff every level draws from its all-visible list (*artist-all-visible*,
 ;;     the debug menu's "All Visible": no vis decompression, no VIS loads) and the nickname is cleared and held
-;;     (want-vis, load-boundary.gc). At the landing the hold ends but nothing is reloaded: vis comes back with the
-;;     first vis line the game's own boundaries cross (where its designers put one), and everything is drawn until
-;;     then. The checkpoint, which normally follows the vis level, is set at the landing to the nearest one of the
-;;     level under Jak, so a respawn after a long flight is near where he came down.
+;;     (want-vis, load-boundary.gc). At the landing the hold ends and the all-visible switch goes off, but nothing is
+;;     reloaded: vis comes back with the first vis line the game's own boundaries cross (where its designers put
+;;     one), and until then a level with no vis for the camera's spot draws everything (update-visible, cam-update.gc),
+;;     as it does when Jak walks in. The checkpoint, which normally follows the vis level, is set at the landing to
+;;     the nearest one of the level under Jak, so a respawn after a long flight is near where he came down.
 ;;  7. Anti-abyss net: when the game is about to kill Jak for falling out of the world after flying, he goes back above
 ;;     the last spot where a ray straight down hit ground (a spot saved in the same unbroken flight never goes stale).
 ;;  8. With solid ground right below a flying Jak, the game's death line doesn't apply (the death line is the
 ;;     checkpoint level's: Snowy's is at +128 m, over ground 100 m lower in the neighbouring pass).
 ;;  9. Never fight the game for the level list: if the wants get changed back more than a few times a second, the
 ;;     streamer backs off for 5 s.
-;; Hooks (LIGHT JAK): want-levels (load-boundary.gc) calls *fs-want-levels-hook*, so a boundary crossed in flight is
-;; re-decided in the same frame; the endless-fall check (logic-target.gc) asks *fs-endlessfall-hook* first; fs-tick runs
-;; from the flight (light-flight.gc). Lint: lj-lint.py.
-
-(defconstant FS-SLOTS 2)  ;; Jak 1's load-state wants two levels
-(defconstant FS-LEVELS 3) ;; and *level* has three (level0, level1, the default)
+;; Hooks (LIGHT JAK, declared in flight-stream-h.gc): want-levels (load-boundary.gc) calls *fs-want-levels-hook*, so a
+;; boundary crossed in flight is re-decided in the same frame; the endless-fall checks (logic-target.gc, collide-shape.gc)
+;; ask *fs-endlessfall-hook* first; want-vis is held by *fs-vis-hold?*; fs-tick runs from the flight (light-flight.gc).
+;; Lint: lj-lint.py and fs-lint.py.
 
 ;; ---- LEVEL STREAMING WHILE FLYING ----
 (define *fs-stream-timer* 0)                ;; frames since the last decision
@@ -75,6 +76,7 @@
 (define *fs-hook-window* (seconds 0.2))     ;; a want-levels this soon after the flight code ran is re-decided
 (define *fs-probe-radius* 40.96)            ;; the ground ray's sphere (as the Jak 2/3 streamer's)
 (define *fs-rescue-window* (seconds 10))    ;; the abyss net only acts this soon after a flight
+(define *fs-flight-gap* (seconds 0.1))      ;; flight ticks further apart than this: a new flight began
 (defconstant FS-MAP-FLOOR (meters 130))     ;; the map's byte encoding: (height + FS-MAP-FLOOR) / 2 m + 1 (mapgen.py)
 (defconstant FS-MAP-STEP (meters 2))
 
@@ -249,16 +251,15 @@
   (when (and *fs-vis-off-in-air?* (not *fs-vis-hold?*))
     (set! (-> *load-state* vis-nick) #f)
     (set! *artist-all-visible* #t)
-    (set! *fs-vis-pending?* #f)
     (set! *fs-vis-hold?* #t))
   (none))
 
 (defun fs-vis-land ((pos vector))
-  "Rule 6, at the landing (lj-land!): the hold ends, everything stays drawn until the game's own lines set a vis
-   level (load-boundary.gc want-vis); the checkpoint goes to the nearest one of the level under Jak."
+  "Rule 6, at the landing (lj-land!): the hold and the all-visible switch end (vis comes back with the game's own next
+   vis line); the checkpoint goes to the nearest one of the level under Jak."
   (when *fs-vis-hold?*
     (set! *fs-vis-hold?* #f)
-    (set! *fs-vis-pending?* #t)
+    (set! *artist-all-visible* #f)
     (let ((lv (fs-map-at pos *fs-map-below*)))
       (when (and lv (= (fs-level-status lv) 'active))
         (let ((info (lookup-level-info lv))
@@ -390,7 +391,7 @@
   "Per frame while flying: the abyss net, the level decision every few frames, and every wanted mapped level that is
    loaded but undrawn displayed (display is normally switched on by boundaries, which flight skips)."
   ;; a gap in the ticks means a new flight began (the abyss net trusts spots saved since then)
-  (if (< 30 (- (fs-now) *fs-air-frame*)) (set! *fs-air-since* (fs-now)))
+  (if (< *fs-flight-gap* (- (fs-now) *fs-air-frame*)) (set! *fs-air-since* (fs-now)))
   (set! *fs-air-frame* (fs-now))
   (fs-vis-takeoff)
   (fs-abyss-net)

@@ -361,12 +361,16 @@ void extract_common(const ObjectFileDB& db,
   // the real pelican on Sentinel Beach, keeps its colours). Done here from the player's own pixels, so nothing derived
   // from the game's art is shipped. A white with a little of the original's light and dark kept.
   if (!config.common_whiten_textures.empty()) {
+    constexpr float kWhiteFloor = 0.84f;  // the darkest a whitened pixel gets ...
+    constexpr float kWhiteShade = 0.16f;  // ... plus this much of the original's brightness
+    constexpr float kTintR = 0.95f, kTintG = 0.97f, kTintB = 1.02f;  // a cool, Light Jak blue-white
     int whitened = 0;
     for (auto& t : tfrag_level.textures) {
       bool match = false;
       for (const auto& prefix : config.common_whiten_textures) {
         if (t.debug_name.rfind(prefix, 0) == 0) {
           match = true;
+          break;
         }
       }
       if (!match) {
@@ -374,11 +378,11 @@ void extract_common(const ObjectFileDB& db,
       }
       for (auto& px : t.data) {
         const u32 r = px & 0xff, g = (px >> 8) & 0xff, b = (px >> 16) & 0xff, a = px >> 24;
-        const float l = (0.299f * r + 0.587f * g + 0.114f * b) / 255.f;
-        const float v = 0.84f + 0.16f * l;
-        const u32 nr = (u32)(255.f * v * 0.95f);
-        const u32 ng = (u32)(255.f * v * 0.97f);
-        const u32 nb = std::min(255u, (u32)(255.f * v * 1.02f));
+        const float l = (0.299f * r + 0.587f * g + 0.114f * b) / 255.f;  // luma
+        const float v = kWhiteFloor + kWhiteShade * l;
+        const u32 nr = (u32)(255.f * v * kTintR);
+        const u32 ng = (u32)(255.f * v * kTintG);
+        const u32 nb = std::min(255u, (u32)(255.f * v * kTintB));
         px = nr | (ng << 8) | (nb << 16) | (a << 24);
       }
       whitened++;

@@ -1,0 +1,27 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: flight-stream-h.gc
+;; name in dgo: flight-stream-h
+;; dgos: GAME
+
+;; LIGHT JAK IN JAK 1: everything flight-stream.gc needs to know about Jak 1 and the engine files need to see, apart
+;; from the ground map (flight-map.gc, generated). Compiled right after light-jak-h, before the engine files that
+;; call the hooks (load-boundary.gc, logic-target.gc, collide-shape.gc). The Jak 2/3 streamer splits the same way:
+;; flight-stream-h.gc per game, flight-stream.gc shared (that one is a fork here: see its header).
+
+(defconstant FS-SLOTS 2)  ;; Jak 1's load-state wants two levels
+(defconstant FS-LEVELS 3) ;; and *level* has three (level0, level1, the default)
+
+;; ---- the streamer's hooks into the engine (flight-stream.gc sets them) ----
+(define *fs-want-levels-hook* (the-as (function none) #f))          ;; called at the end of want-levels (load-boundary.gc)
+(define *fs-endlessfall-hook* (the-as (function symbol symbol) #f)) ;; asked before an endless-fall death: 'line
+                                                                    ;; (logic-target.gc) or 'surface (collide-shape.gc)
+(define *fs-vis-hold?* #f) ;; while flying: no vis (want-vis in load-boundary.gc is held; flight-stream.gc rule 6)
+
+(defun fs-reset! ()
+  "A flight cut off without a landing (a load, a death, a new game): vis back on."
+  (when *fs-vis-hold?*
+    (set! *artist-all-visible* #f)
+    (set! *fs-vis-hold?* #f))
+  (none))

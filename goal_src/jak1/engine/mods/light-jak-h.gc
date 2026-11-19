@@ -5,8 +5,10 @@
 ;; name in dgo: light-jak-h
 ;; dgos: GAME
 
-;; LIGHT JAK IN JAK 1: the types, the tuning and the state, in one file compiled right after target-h so that the
-;; engine files that read the state (cam-master, drawable, target, target-handler, logic-target) see it.
+;; LIGHT JAK IN JAK 1: the types, the tuning, the state, the flight camera's hook and the helpers the mod files share,
+;; in one file compiled right after target-h so that the engine files that read the state (cam-master, cam-update,
+;; drawable, target, target-handler, logic-target) see it. The streamer's hooks are in flight-stream-h.gc, next.
+;; The mod files compile in the order light-wings, light-jak, light-flight (game.gp).
 ;;
 ;; What the mod is: the ending's white-eco Jak (jak-white-ag) drawn in place of the player as a puppet that copies his
 ;; bones every frame (light-jak.gc), Jak 3's Light Jak flight on Jak 1's jump states (light-flight.gc), the Sentinel
@@ -29,6 +31,7 @@
    (gravity-max       float)      ;; fastest fall while flying (FC-GRAVITY-MAX)
    (hold-bonus        float)      ;; extra climb a held X adds (*fc-flap-hold-bonus*)
    (hold-accel        float)      ;; how fast holding adds it (*fc-flap-hold-accel*)
+   (hold-min          float)      ;; a held X adding less than this a frame has nothing left to give: the hold ends
    (big-flap-impulse  float)      ;; a flap out of a glide (*fc-big-flap-impulse*)
    (big-flap-cap      float)      ;; (*fc-big-flap-cap*)
    (glide-sink        float)      ;; glide descent, m/s (*tf-glide-sink*)
@@ -79,6 +82,9 @@
    (cam-blend-in      float)      ;; per second, from the game camera
    (cam-blend-out     float)      ;; per second, back to it
    (cam-radius        float)      ;; the collision probe's sphere
+   (cam-close         float)      ;; closer than this to his look point (flat), the camera takes his facing instead
+   (cam-hit-min       float)      ;; a hit pulls the camera in, never closer than this share of the way out ...
+   (cam-hit-back      float)      ;; ... and this share in front of the hit
    ;; ---- the flying pose: three layers on Jak's own channels (lj-flight-pose) ----
    ;; RAW frames of eichar-jump-ja (a Deck frame scan, 2026-10-17: 0-6 the stiff launch, arms hanging and legs locked,
    ;; which every flap used to land on; 15-24 arms out wide, legs tucking; 27-33 arms up and back)
@@ -139,7 +145,7 @@
        :flap-impulse (meters 12) :climb-cap (meters 20) :flap-cooldown (seconds 0.35)
        :windup (seconds 0.1) :windup-damp 0.95
        :gravity 81920.0 :gravity-max 163840.0
-       :hold-bonus (meters 10) :hold-accel (meters 25)
+       :hold-bonus (meters 10) :hold-accel (meters 25) :hold-min (meters 0.01)
        :big-flap-impulse (meters 28) :big-flap-cap (meters 35)
        :glide-sink (meters 3) :glide-cruise (meters 18) :glide-max (meters 45) :glide-accel (meters 10)
        :glide-turbo-accel (meters 25) :glide-turbo-max (meters 50) :glide-turbo-sink (meters 1)
@@ -151,7 +157,7 @@
        :slam-speed (meters 20) :slam-max 245760.0 :slam-boost-max 409600.0 :slam-blast (meters 9)
        :cam-dist (meters 8) :cam-height (meters 3) :cam-glide-dist (meters 10) :cam-glide-height (meters 4)
        :cam-look-up (meters 1.2) :cam-follow 6.0 :cam-swing 3.0 :cam-swing-min (meters 8) :cam-blend-in 3.0 :cam-blend-out 2.0
-       :cam-radius (meters 0.6)
+       :cam-radius (meters 0.6) :cam-close (meters 0.5) :cam-hit-min 0.15 :cam-hit-back 0.05
        :pose-up 15.0 :pose-apex 21.0 :pose-down 30.0 :flap-from 28.0 :flap-to 15.0 :flap-weight 0.85
        :pose-range (meters 12) :pose-rate 20.0 :pose-kick-rate 40.0
        :flap-in (seconds 0.08) :flap-play (seconds 0.4) :flap-out (seconds 0.25)
@@ -174,8 +180,10 @@
    (flap-pending? symbol)     ;; a flap's wind-up is running
    (slam?         symbol)     ;; a superhero landing is in progress
    (slam-started? symbol)
-   (powerup?      symbol)     ;; the R3 switch asked for the eco powerup pose (sent from the puppet's process)
-   (cam-reset?    symbol)     ;; a flight ended: put the game's camera back behind Jak (sent from the puppet's process)
+   ;; requests the puppet's process sends as events (an event needs a sending process; the R3 poll and some flight
+   ;; ends run outside one, and an event that makes Jak change state must not come from his own :post)
+   (powerup?      symbol)     ;; the R3 switch asked for the eco powerup pose
+   (cam-reset?    symbol)     ;; a flight ended on screen: put the game's camera back behind Jak
    (flap-time     time-frame) ;; last flap press
    (dash-start    time-frame)
    (hold-given    float)
@@ -187,7 +195,6 @@
    (pose-phase    float)      ;; the glide sway, degrees
    (cam-blend     float)
    (cam-pos       vector :inline)
-   (wing-beat     float)      ;; position in the wings' flap cycle, frames
    (puppet        handle)     ;; the light-eco Jak (jak-white-ag) process, a child of Jak spawned with him
    (wings         handle)
    (hidden-proc   process-drawable))) ;; the process whose mesh the draw skips (Jak while the puppet stands in), or #f
@@ -200,15 +207,18 @@
 (set! (-> *lj* cam-pos w) 1.0)
 (set! (-> *lj* pose-cur) (-> *lj-tune* pose-apex))
 
-;; ---- the flight streamer's hooks into the engine (flight-stream.gc sets them; the engine files compile after this) ----
-(define *fs-want-levels-hook* (the-as (function none) #f))    ;; called at the end of want-levels (load-boundary.gc)
-(define *fs-endlessfall-hook* (the-as (function symbol symbol) #f)) ;; asked before an endless-fall death: 'line
-                                                                    ;; (logic-target.gc) or 'surface (collide-shape.gc)
-(define *fs-vis-hold?* #f)    ;; while flying: no vis (want-vis in load-boundary.gc is held; flight-stream.gc rule 6)
-(define *fs-vis-pending?* #f) ;; landed: everything still drawn until the game's own lines pick a vis level again
+;; ---- the flight camera's hook into the engine: update-camera (cam-update.gc) calls it after the game camera is copied
+;; into *math-camera* (light-flight.gc sets it) ----
+(define *lj-cam-hook* (the-as (function none) #f))
+
+(defmacro lj-seconds (tf)
+  "A time-frame as seconds (300 ticks a second)."
+  `(/ (the float ,tf) 300.0))
 
 (defun lj-reset! ()
-  "Everything a flight sets, cleared. At Jak's birth (a new game, a load, a death) and whenever a flight ends."
+  "The flight's own state, cleared: when a flight ends and at Jak's birth (a new game, a load, a death). Not cleared:
+   the camera blend (it fades back out on its own), the dash timer (its cooldown spans flights), the requests to the
+   puppet's process (lj-form-spawn clears those), the streamer's (fs-reset!, flight-stream-h.gc)."
   (set! (-> *lj* flying?) #f)
   (set! (-> *lj* gliding?) #f)
   (set! (-> *lj* holding?) #f)
@@ -220,9 +230,49 @@
   (set! (-> *lj* glide-speed) 0.0)
   (set! (-> *lj* body-pitch) 0.0)
   (set! (-> *lj* pose-mixing?) #f)
-  (when (or *fs-vis-hold?* *fs-vis-pending?*) ;; a flight cut off without a landing (a load, a spawn): vis back on
-    (set! *artist-all-visible* #f)
-    (set! *fs-vis-hold?* #f)
-    (set! *fs-vis-pending?* #f))
   (set! (-> *lj* pose-glide-w) 0.0)
   (none))
+
+;; ---- helpers the form (light-jak.gc), the flight (light-flight.gc) and the wings (light-wings.gc) share ----
+(defun lj-jak-shown? ()
+  "Is the game showing the player's Jak? Not while it hides him itself (cutscenes use their own Jak), nor during a
+   death/warp dissolve: that counts down inside Jak's own draw and ends with 'death-end, so Jak must draw for it or a
+   warp gate waits forever (2026-10-15)."
+  (and *target*
+       (nonzero? (-> *target* draw))
+       (not (logtest? (-> *target* draw status) (draw-status hidden no-anim)))
+       (zero? (-> *target* draw death-timer))))
+
+(defun lj-form-active? ()
+  "Should the puppet (and the wings) stand in for Jak right now?"
+  (and (-> *lj* on?) (lj-jak-shown?)))
+
+(defun lj-joint-index ((nl cspace-array) (name string))
+  "The node whose joint is NAME, or -1."
+  (let ((found -1))
+    (dotimes (i (-> nl length))
+      (let ((jt (-> nl data i joint)))
+        (if (and (< found 0) jt (string= (-> jt name) name)) (set! found i))))
+    found))
+
+(defun lj-draw-show! ((pd process-drawable) (on? symbol))
+  "Show or hide a process the form draws itself (its bones are written for it, so it never animates on its own)."
+  (if on?
+    (logclear! (-> pd draw status) (draw-status hidden no-anim no-skeleton-update))
+    (logior! (-> pd draw status) (draw-status hidden)))
+  (none))
+
+(defun lj-draw-like! ((dst process-drawable) (jak process-drawable) (mult vector) (glow vector))
+  "Light DST like Jak (his light index, his colour times MULT, his emissive plus GLOW), drawn at his origin."
+  (set! (-> dst draw light-index) (-> jak draw light-index))
+  (vector*! (-> dst draw color-mult) (-> jak draw color-mult) mult)
+  (set! (-> dst draw color-mult w) (-> jak draw color-mult w))
+  (vector+! (-> dst draw color-emissive) (-> jak draw color-emissive) glow)
+  (set! (-> dst draw color-emissive w) 0.0)
+  (none))
+
+(defmacro lj-spawn-child (type jak what)
+  "Spawn one of the form's processes as a child of Jak: its handle, or #f (logged)."
+  `(let ((p (process-spawn ,type ,jak :to ,jak)))
+     (if (not p) (format 0 "light-jak: no memory for the ~A~%" ,what))
+     (if p (ppointer->handle p) (the-as handle #f))))
