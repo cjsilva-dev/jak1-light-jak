@@ -71,7 +71,7 @@ jobs:
     name: "Release guard"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Refuse content that must never ship from this repository
         run: bash .github/scripts/release-guard.sh
 
